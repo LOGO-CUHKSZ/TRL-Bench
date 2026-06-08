@@ -1,0 +1,20 @@
+#!/bin/bash
+#SBATCH --job-name={JOB_NAME}
+#SBATCH --output={OUT_DIR}/{JOB_NAME}.out
+#SBATCH --error={OUT_DIR}/{JOB_NAME}.err
+#SBATCH --time=12:00:00
+#SBATCH --partition=gpu
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+
+set -euo pipefail
+cd "$SLURM_SUBMIT_DIR"
+
+python -m trl_bench.run \
+    --model {MODEL} \
+    --task {TASK} \
+    --dataset {DATASET} \
+    --setting {SETTING} \
+    --probe {PROBE} \
+    --seed {SEED}

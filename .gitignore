@@ -1,0 +1,69 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Results and artifacts
+results/
+ckpts/
+checkpoints/
+checkpoints
+*.parquet
+*.pkl
+*.pt
+*.bin
+
+# Logs
+*.log
+logs/
+slurm/jobs/
+slurm/logs/
+slurm/scripts/generated/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+pytest-of-*/
+.pytest_basetemp/
+
+# Local-only artifacts that aren't part of the public release
+# (site-specific env activation, internal design specs, staged HF data,
+# embedding/result caches the user produces locally). Anchored to repo
+# root so they don't match e.g. src/trl_bench/data/.
+/load_env
+/docs/superpowers/
+/data/
+/embeddings/
+/.remember/
+.paper_reference/
+grid_run/
+results_grid/
+results_grid_row/
+embeddings_grid_row/
+embeddings
+
+# Local-only scratch output dirs (suffixed/wildcard forms not caught above);
+# never part of the public release — run outputs produced locally.
+embeddings_*/
+emb_*/
+results_*/
+logs_*/
+checkpoints_*/
+*_ckpt/
+*_venv/
+canonical_ref/
+data_freshtest/
+*_results.txt

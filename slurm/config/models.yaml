@@ -1,0 +1,393 @@
+# Model configurations for SLURM embedding generation
+#
+# Each model defines:
+#   - script: Path to the embedding generation script
+#   - checkpoint: Path to model checkpoint (relative to project root)
+#   - env_setup: Shell command to setup environment
+#   - args: Mapping of logical argument names to CLI flags
+#   - defaults: Default parameter values
+#   - memory_multiplier: Factor to multiply base memory allocation (optional)
+
+models:
+  starmie:
+    pretrain:
+      script: "src/trl_bench/models/starmie/run_pretrain.py"
+      checkpoint_dir: "checkpoints/starmie"
+      # Checkpoint output: {checkpoint_dir}/{dataset}/model_{augment_op}_{sample_meth}_{table_order}_{run_id}.pt
+      checkpoint_filename: "model_drop_col,sample_row_head_column_0.pt"
+      args:
+        data_path: "--data_path"
+        checkpoint_dir: "--checkpoint_dir"
+        n_epochs: "--n_epochs"
+        augment_op: "--augment_op"
+        sample_meth: "--sample_meth"
+        table_order: "--table_order"
+        max_rows: "--max_rows"
+      flag_args:
+        save_model: "--save_model"
+        fp16: "--fp16"
+      defaults:
+        n_epochs: 20
+        augment_op: "drop_col,sample_row"
+        sample_meth: "head"
+        table_order: "column"
+        max_rows: 1000
+        save_model: true
+        fp16: true
+    script: "src/trl_bench/models/starmie/generate_column_embeddings.py"
+    checkpoint: "auto"
+    env_setup: "source load_env"
+    args:
+      input: "--input_dir"
+      output: "--output_path"
+      checkpoint: "--model_path"
+      max_rows: "--max_rows"
+      batch_size: "--batch_size"
+      checkpoint_interval: "--checkpoint_interval"
+    defaults:
+      max_rows: 1000
+      batch_size: 1024
+      checkpoint_interval: 100
+    resource_overrides:
+      ecb_join:
+        time_limit: "08:00:00"
+        partition: "YOUR_GPU_PARTITION_SMALL"
+        memory: "100G"
+
+  tabert:
+    script: "src/trl_bench/models/tabert/generate_column_embeddings.py"
+    checkpoint: "checkpoints/tabert/tabert_base_k3/model.bin"
+    env_setup: "source src/trl_bench/models/tabert/load_env"  # TaBERT has its own venv
+    args:
+      input: "--input"
+      output: "--output"
+      checkpoint: "--checkpoint"
+      max_rows: "--max_rows"
+      checkpoint_interval: "--checkpoint_interval"
+    defaults:
+      max_rows: 100
+      checkpoint_interval: 100
+    memory_multiplier: 1.5  # TaBERT is more memory-intensive
+
+    repair:
+      chunk_size: 16
+  tabsketchfm:
+    script: "src/trl_bench/models/tabsketchfm/generate_column_embeddings.py"
+    checkpoint: "checkpoints/tabsketchfm/epoch=10-step=27786.ckpt"
+    env_setup: "source load_env"
+    args:
+      input: "--input"
+      output: "--output"
+      checkpoint: "--checkpoint"
+      checkpoint_interval: "--checkpoint_interval"
+    defaults:
+      checkpoint_interval: 100
+    # Note: TabSketchFM does NOT support --max_rows or --batch_size
+
+  tapas:
+    script: "src/trl_bench/models/tapas/generate_column_embeddings.py"
+    checkpoint: "google/tapas-base"  # HuggingFace model ID, auto-downloaded
+    checkpoint_type: "huggingface"
+    env_setup: "source load_env"
+    args:
+      input: "--input"
+      output: "--output"
+      checkpoint: "--model"
+      max_rows: "--max_rows"
+      checkpoint_interval: "--checkpoint_interval"
+    defaults:
+      max_rows: 100  # TAPAS max_length=512, large tables cause CUDA errors with more rows
+      checkpoint_interval: 100
+    # Note: TAPAS does NOT support --batch_size
+    shard_overrides:
+      sotab: 20
+      ckan_subset: 20
+      opendata_main: 50
+      opendata_usa: 20
+
+  bert:
+    script: "src/trl_bench/models/bert/generate_column_embeddings.py"
+    checkpoint: "bert-base-uncased"
+    checkpoint_type: "huggingface"
+    env_setup: "source load_env"
+    args:
+      input: "--input"
+      output: "--output"
+      checkpoint: "--model"
+      max_rows: "--max_rows"
+      checkpoint_interval: "--checkpoint_interval"
+    defaults:
+      max_rows: 100
+      checkpoint_interval: 100
+    # Note: BERT does NOT support --batch_size (encodes one table at a time)
+
+  gte:
+    script: "src/trl_bench/models/gte/generate_column_embeddings.py"
+    checkpoint: "thenlper/gte-base"
+    checkpoint_type: "huggingface"
+    env_setup: "source load_env"
+    args:
+      input: "--input"
+      output: "--output"
+      checkpoint: "--model"
+      max_rows: "--max_rows"
+      max_length: "--max_length"
+      checkpoint_interval: "--checkpoint_interval"
+    defaults:
+      max_rows: 100
+      checkpoint_interval: 100
+    # Note: default max_length is 512 in the script; override per-run if needed
+
+  turl:
+    script: "src/trl_bench/models/turl/generate_column_embeddings_dataset.py"
+    checkpoint: "checkpoints/turl/pretrained"  # Directory containing pytorch_model.bin
+    env_setup: "source load_env"
+    args:
+      input: "--input_dir"
+      output: "--output_file"
+      checkpoint: "--checkpoint"
+      max_rows: "--max_rows"
+      max_entities: "--max_entities"
+      batch_size: "--batch_size"
+      num_workers: "--num_workers"
+      max_cell_chars: "--max_cell_chars"
+      checkpoint_interval: "--checkpoint_interval"
+    extra_args: "--mode table_directory"  # TURL requires mode argument
+    defaults:
+      max_rows: 100
+      max_entities: 12000
+      batch_size: 16
+      num_workers: 4
+      max_cell_chars: 512
+      checkpoint_interval: 100
+    dataset_overrides:
+      ckan_subset:
+        batch_size: 1
+      spider_join:
+        batch_size: 1
+      ecb_join:
+        batch_size: 1
+      opendata_main:
+        batch_size: 1
+      opendata_can:
+        batch_size: 1
+      opendata_usa:
+        batch_size: 1
+      opendata_uk_sg:
+        batch_size: 1
+      valentine:
+        batch_size: 1
+      dlte_v1_queries:
+        batch_size: 1
+      dlte_v1_targets:
+        batch_size: 1
+    repair:
+      enabled: false
+
+  tabbie:
+    script: "src/trl_bench/models/tabbie/generate_column_embeddings.py"
+    checkpoint: "checkpoints/tabbie/weights.pt"
+    env_setup: "source load_env"
+    args:
+      input: "--input"
+      output: "--output"
+      checkpoint: "--model_path"
+      max_rows: "--max_rows"
+      checkpoint_interval: "--checkpoint_interval"
+      device_id: "--device_id"
+      bert_model_name: "--bert_model_name"
+    defaults:
+      max_rows: 30   # TABBIE's grid limit — MAX_ROWS in csv_to_embeddings.py
+      checkpoint_interval: 100
+
+# Text embedding jobs — standalone SLURM jobs for encoding queries/questions
+# Each job produces one .sbatch script (not part of the model×dataset matrix)
+text_embedding_jobs:
+  # ── Sentence-T5 text embedding jobs ────────────────────────────
+  # Architecturally independent query encoder (T5 encoder-decoder, relative
+  # position bias, span-corruption pretraining) for multi-encoder robustness.
+
+  sentence_t5_nq_tables_queries_train:
+    script: "src/trl_bench/models/sentence_t5/generate_text_embeddings.py"
+    env_setup: "source load_env"
+    mode: "cls"
+    input_json: "data/nq_tables/train.json"
+    text_field: "question"
+    id_field: "question_id"
+    output: "embeddings/table_retrieval/sentence_t5/queries_train.pkl"
+    model: "sentence-transformers/sentence-t5-base"
+    batch_size: 64
+    max_length: 128
+    size_category: SMALL
+
+  sentence_t5_nq_tables_queries_dev:
+    script: "src/trl_bench/models/sentence_t5/generate_text_embeddings.py"
+    env_setup: "source load_env"
+    mode: "cls"
+    input_json: "data/nq_tables/dev.json"
+    text_field: "question"
+    id_field: "question_id"
+    output: "embeddings/table_retrieval/sentence_t5/queries_dev.pkl"
+    model: "sentence-transformers/sentence-t5-base"
+    batch_size: 64
+    max_length: 128
+    size_category: SMALL
+
+  sentence_t5_wtq_questions_train:
+    script: "src/trl_bench/models/sentence_t5/generate_text_embeddings.py"
+    env_setup: "source load_env"
+    mode: "token"
+    input_json: "data/wiki_table_questions/data_split_1/train_split.jsonl"
+    tokens_field: "tokens"
+    id_field: "id"
+    output: "embeddings/semantic_parsing/wiki_table_questions/sentence_t5/questions_train.pkl"
+    model: "sentence-transformers/sentence-t5-base"
+    batch_size: 64
+    max_length: 512
+    size_category: SMALL
+
+  sentence_t5_wtq_questions_dev:
+    script: "src/trl_bench/models/sentence_t5/generate_text_embeddings.py"
+    env_setup: "source load_env"
+    mode: "token"
+    input_json: "data/wiki_table_questions/data_split_1/dev_split.jsonl"
+    tokens_field: "tokens"
+    id_field: "id"
+    output: "embeddings/semantic_parsing/wiki_table_questions/sentence_t5/questions_dev.pkl"
+    model: "sentence-transformers/sentence-t5-base"
+    batch_size: 64
+    max_length: 512
+    size_category: SMALL
+
+  sentence_t5_wtq_questions_test:
+    script: "src/trl_bench/models/sentence_t5/generate_text_embeddings.py"
+    env_setup: "source load_env"
+    mode: "token"
+    input_json: "data/wiki_table_questions/data_split_1/test_split.jsonl"
+    tokens_field: "tokens"
+    id_field: "id"
+    output: "embeddings/semantic_parsing/wiki_table_questions/sentence_t5/questions_test.pkl"
+    model: "sentence-transformers/sentence-t5-base"
+    batch_size: 64
+    max_length: 512
+    size_category: SMALL
+
+  # ── MPNet text embedding jobs ──────────────────────────────────
+  # Architecturally independent query encoder (masked-and-permuted LM,
+  # distinct pretraining from BERT's MLM) for multi-encoder robustness.
+
+  mpnet_nq_tables_queries_train:
+    script: "src/trl_bench/models/mpnet/generate_text_embeddings.py"
+    env_setup: "source load_env"
+    mode: "cls"
+    input_json: "data/nq_tables/train.json"
+    text_field: "question"
+    id_field: "question_id"
+    output: "embeddings/table_retrieval/mpnet/queries_train.pkl"
+    model: "sentence-transformers/all-mpnet-base-v2"
+    batch_size: 64
+    max_length: 128
+    size_category: SMALL
+
+  mpnet_nq_tables_queries_dev:
+    script: "src/trl_bench/models/mpnet/generate_text_embeddings.py"
+    env_setup: "source load_env"
+    mode: "cls"
+    input_json: "data/nq_tables/dev.json"
+    text_field: "question"
+    id_field: "question_id"
+    output: "embeddings/table_retrieval/mpnet/queries_dev.pkl"
+    model: "sentence-transformers/all-mpnet-base-v2"
+    batch_size: 64
+    max_length: 128
+    size_category: SMALL
+
+  mpnet_wtq_questions_train:
+    script: "src/trl_bench/models/mpnet/generate_text_embeddings.py"
+    env_setup: "source load_env"
+    mode: "token"
+    input_json: "data/wiki_table_questions/data_split_1/train_split.jsonl"
+    tokens_field: "tokens"
+    id_field: "id"
+    output: "embeddings/semantic_parsing/wiki_table_questions/mpnet/questions_train.pkl"
+    model: "sentence-transformers/all-mpnet-base-v2"
+    batch_size: 64
+    max_length: 512
+    size_category: SMALL
+
+  mpnet_wtq_questions_dev:
+    script: "src/trl_bench/models/mpnet/generate_text_embeddings.py"
+    env_setup: "source load_env"
+    mode: "token"
+    input_json: "data/wiki_table_questions/data_split_1/dev_split.jsonl"
+    tokens_field: "tokens"
+    id_field: "id"
+    output: "embeddings/semantic_parsing/wiki_table_questions/mpnet/questions_dev.pkl"
+    model: "sentence-transformers/all-mpnet-base-v2"
+    batch_size: 64
+    max_length: 512
+    size_category: SMALL
+
+  mpnet_wtq_questions_test:
+    script: "src/trl_bench/models/mpnet/generate_text_embeddings.py"
+    env_setup: "source load_env"
+    mode: "token"
+    input_json: "data/wiki_table_questions/data_split_1/test_split.jsonl"
+    tokens_field: "tokens"
+    id_field: "id"
+    output: "embeddings/semantic_parsing/wiki_table_questions/mpnet/questions_test.pkl"
+    model: "sentence-transformers/all-mpnet-base-v2"
+    batch_size: 64
+    max_length: 512
+    size_category: SMALL
+
+  # ── OpenAI text embedding jobs (paper Table 30 ablation) ───────
+  # API-based encoder, CLS-only (no token-level embeddings available).
+  # Dimensions=768 to match GTE-base for fair comparison.
+  # `mode: "cls"` is a structural marker matching mpnet/sentence_t5 schema;
+  # the openai script itself does not accept --mode (one embedding per text).
+
+  openai_nq_tables_queries_train:
+    script: "src/trl_bench/models/openai/generate_text_embeddings.py"
+    env_setup: "source load_env"
+    mode: "cls"
+    input_json: "data/nq_tables/train.json"
+    text_field: "question"
+    id_field: "question_id"
+    output: "embeddings/table_retrieval/openai/queries_train.pkl"
+    model: "text-embedding-3-small"
+    batch_size: 256
+    dimensions: 768
+    size_category: SMALL
+
+  openai_nq_tables_queries_dev:
+    script: "src/trl_bench/models/openai/generate_text_embeddings.py"
+    env_setup: "source load_env"
+    mode: "cls"
+    input_json: "data/nq_tables/dev.json"
+    text_field: "question"
+    id_field: "question_id"
+    output: "embeddings/table_retrieval/openai/queries_dev.pkl"
+    model: "text-embedding-3-small"
+    batch_size: 256
+    dimensions: 768
+    size_category: SMALL
+# Repair configuration for two-pass embedding (generate -> scan -> repair).
+# Re-enabled after porting the embedding_repair subsystem to
+# src/trl_bench/utils/embedding_repair/. The sbatch template invokes
+# `python -m trl_bench.utils.embedding_repair.cli`.
+repair_defaults:
+  enabled: true
+  chunk_size: 64
+  max_rows: null
+  report_dir: "slurm/logs/repair"
+
+# Output format:
+# All models produce unified v2.0 format:
+#   [{
+#       'table': 'path/to/table.csv',
+#       'table_id': 'table_name',
+#       'column_embeddings': {0: array, 1: array, ...},
+#       'column_names': ['col1', 'col2', ...],
+#       'table_embedding': {...}
+#   }, ...]

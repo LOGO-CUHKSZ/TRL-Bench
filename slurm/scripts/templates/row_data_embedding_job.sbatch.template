@@ -1,0 +1,257 @@
+#!/bin/bash
+#SBATCH --job-name=${JOB_NAME}
+#SBATCH --output=${LOG_DIR}/jobs/${MODEL}_${DATASET}_rowdata_%j.out
+#SBATCH --error=${LOG_DIR}/jobs/${MODEL}_${DATASET}_rowdata_%j.err
+#SBATCH --time=${TIME_LIMIT}
+#SBATCH --mem=${MEMORY}
+#SBATCH --gres=gpu:${GPUS}
+#SBATCH --cpus-per-task=${CPUS}
+#SBATCH --partition=${PARTITION}
+${EXTRA_SLURM_DIRECTIVES}
+
+# =============================================================================
+# SLURM Row Data Embedding Generation Job (split-aware / canonical dataset)
+# Model: ${MODEL}
+# Dataset: ${DATASET}
+# Generated: ${TIMESTAMP}
+# =============================================================================
+
+set -euo pipefail
+
+# -----------------------------------------------------------------------------
+# Configuration
+# -----------------------------------------------------------------------------
+PROJECT_ROOT="${PROJECT_ROOT}"
+MODEL="${MODEL}"
+DATASET="${DATASET}"
+DATA_DIR="${DATA_DIR}"
+EMBEDDING_DIR="${EMBEDDING_DIR}"
+CHECKPOINT_DIR="${CHECKPOINT_DIR}"
+STATUS_FILE="${STATUS_FILE}"
+TIMING_FILE="${TIMING_FILE}"
+
+# Job metadata
+SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
+JOB_KEY="rowdata_${MODEL}_${DATASET}"
+LOG_PREFIX="[${JOB_KEY}]"
+
+# -----------------------------------------------------------------------------
+# Logging Functions
+# -----------------------------------------------------------------------------
+log_info() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} INFO: $*"
+}
+
+log_warn() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} WARN: $*" >&2
+}
+
+log_error() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} ERROR: $*" >&2
+}
+
+# -----------------------------------------------------------------------------
+# Status Update Functions (Atomic JSON updates with file locking)
+# -----------------------------------------------------------------------------
+update_status() {
+    local status="$1"
+    local message="${2:-}"
+    local exit_code="${3:-0}"
+
+    local timestamp
+    timestamp=$(date -Iseconds)
+
+    mkdir -p "$(dirname "${STATUS_FILE}")"
+
+    (
+        flock -w 30 200 || { log_warn "Could not acquire lock for status update"; return 0; }
+
+        if [[ ! -f "${STATUS_FILE}" ]]; then
+            echo '{}' > "${STATUS_FILE}"
+        fi
+
+        python3 << EOF
+import json
+
+status_file = "${STATUS_FILE}"
+job_key = "${JOB_KEY}"
+
+try:
+    with open(status_file, 'r') as f:
+        data = json.load(f)
+except (json.JSONDecodeError, FileNotFoundError):
+    data = {}
+
+data[job_key] = {
+    'status': "${status}",
+    'message': "${message}",
+    'exit_code': ${exit_code},
+    'timestamp': "${timestamp}",
+    'slurm_job_id': "${SLURM_JOB_ID}",
+    'model': "${MODEL}",
+    'dataset': "${DATASET}",
+    'embedding_type': 'row_data',
+    'data_dir': "${DATA_DIR}",
+    'embedding_dir': "${EMBEDDING_DIR}",
+    'checkpoint_dir': "${CHECKPOINT_DIR}",
+}
+
+with open(status_file, 'w') as f:
+    json.dump(data, f, indent=2)
+EOF
+    ) 200>"${STATUS_FILE}.lock"
+}
+
+# -----------------------------------------------------------------------------
+# Timing Functions
+# -----------------------------------------------------------------------------
+record_timing() {
+    local duration="$1"
+    local status="${2:-completed}"
+
+    local timestamp
+    timestamp=$(date -Iseconds)
+
+    mkdir -p "$(dirname "${TIMING_FILE}")"
+
+    (
+        flock -w 30 200 || { log_warn "Could not acquire lock for timing"; return 0; }
+
+        if [[ ! -f "${TIMING_FILE}" ]]; then
+            echo "timestamp,model,dataset,slurm_job_id,duration_seconds,tables_processed,status,embedding_type" > "${TIMING_FILE}"
+        fi
+
+        echo "${timestamp},${MODEL},${DATASET},${SLURM_JOB_ID},${duration},1,${status},row_data" >> "${TIMING_FILE}"
+    ) 200>"${TIMING_FILE}.lock"
+}
+
+# -----------------------------------------------------------------------------
+# Pre-flight Checks
+# -----------------------------------------------------------------------------
+preflight_checks() {
+    log_info "Running pre-flight checks..."
+
+    if [[ ! -f "${DATA_DIR}/dataset.json" ]]; then
+        log_error "dataset.json not found in: ${DATA_DIR}"
+        return 1
+    fi
+    log_info "Found dataset.json in ${DATA_DIR}"
+
+    # Create output directories
+    if ! mkdir -p "${EMBEDDING_DIR}" 2>/dev/null; then
+        log_error "Cannot create embedding directory: ${EMBEDDING_DIR}"
+        return 1
+    fi
+
+    if [[ -n "${CHECKPOINT_DIR}" ]]; then
+        if ! mkdir -p "${CHECKPOINT_DIR}" 2>/dev/null; then
+            log_error "Cannot create checkpoint directory: ${CHECKPOINT_DIR}"
+            return 1
+        fi
+        log_info "Checkpoint directory: ${CHECKPOINT_DIR}"
+    fi
+
+    log_info "Pre-flight checks passed"
+    return 0
+}
+
+# -----------------------------------------------------------------------------
+# GPU Verification
+# -----------------------------------------------------------------------------
+verify_gpu() {
+    log_info "Verifying GPU availability..."
+
+    if ! command -v nvidia-smi &> /dev/null; then
+        log_warn "nvidia-smi not found, GPU verification skipped"
+        return 0
+    fi
+
+    if ! nvidia-smi &> /dev/null; then
+        log_error "GPU not accessible"
+        return 1
+    fi
+
+    local gpu_info
+    gpu_info=$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || echo "Unknown")
+    log_info "GPU: ${gpu_info}"
+
+    if [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then
+        log_info "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES}"
+    fi
+
+    return 0
+}
+
+# -----------------------------------------------------------------------------
+# Cleanup Handler
+# -----------------------------------------------------------------------------
+cleanup() {
+    local exit_code=$?
+    local end_time
+    end_time=$(date +%s)
+    local duration=$((end_time - START_TIME))
+
+    if [[ ${exit_code} -eq 0 ]]; then
+        log_info "Job completed successfully in ${duration} seconds"
+        update_status "COMPLETED" "Success" 0
+        record_timing "${duration}" "completed"
+    else
+        log_error "Job failed with exit code ${exit_code} after ${duration} seconds"
+        update_status "FAILED" "Exit code: ${exit_code}" "${exit_code}"
+        record_timing "${duration}" "failed"
+    fi
+}
+
+# =============================================================================
+# MAIN EXECUTION
+# =============================================================================
+
+START_TIME=$(date +%s)
+
+trap cleanup EXIT
+
+cd "${PROJECT_ROOT}"
+
+log_info "=========================================="
+log_info "Starting row data embedding generation"
+log_info "Model:      ${MODEL}"
+log_info "Dataset:    ${DATASET}"
+log_info "Data dir:   ${DATA_DIR}"
+log_info "Embeddings: ${EMBEDDING_DIR}"
+if [[ -n "${CHECKPOINT_DIR}" ]]; then
+    log_info "Checkpoints: ${CHECKPOINT_DIR}"
+fi
+log_info "SLURM Job:  ${SLURM_JOB_ID}"
+log_info "=========================================="
+
+update_status "RUNNING" "Job started"
+
+if ! preflight_checks; then
+    log_error "Pre-flight checks failed"
+    exit 1
+fi
+
+if ! verify_gpu; then
+    log_error "GPU verification failed"
+    exit 1
+fi
+
+# Setup environment
+log_info "Setting up environment..."
+${ENV_SETUP}
+
+log_info "Python: $(python --version 2>&1)"
+log_info "PyTorch: $(python -c 'import torch; print(torch.__version__)' 2>/dev/null || echo 'not found')"
+
+# Run embedding generation
+${EXECUTION_BLOCK}
+
+# Verify output (metadata.json for normal runs, not_applicable.json for N/A models)
+if [[ -f "${EMBEDDING_DIR}/metadata.json" ]] || [[ -f "${EMBEDDING_DIR}/not_applicable.json" ]]; then
+    log_info "Output verified: ${EMBEDDING_DIR}/ output exists"
+else
+    log_error "Output missing: neither metadata.json nor not_applicable.json in ${EMBEDDING_DIR}/"
+    exit 1
+fi
+
+log_info "Row data embedding generation complete"

@@ -1,0 +1,335 @@
+#!/bin/bash
+#SBATCH --job-name=${JOB_NAME}
+#SBATCH --output=${LOG_DIR}/jobs/${MODEL}_${DATASET}_sempars_%j.out
+#SBATCH --error=${LOG_DIR}/jobs/${MODEL}_${DATASET}_sempars_%j.err
+#SBATCH --time=${TIME_LIMIT}
+#SBATCH --mem=${MEMORY}
+${GPU_DIRECTIVE}
+#SBATCH --cpus-per-task=${CPUS}
+#SBATCH --partition=${PARTITION}
+${EXTRA_SLURM_DIRECTIVES}
+
+# =============================================================================
+# SLURM Downstream Task: Semantic Parsing (WTQ / MAPO)
+# Model: ${MODEL}
+# Dataset: ${DATASET}
+# Generated: ${TIMESTAMP}
+# =============================================================================
+
+set -euo pipefail
+
+# -----------------------------------------------------------------------------
+# Configuration
+# -----------------------------------------------------------------------------
+PROJECT_ROOT="${PROJECT_ROOT}"
+MODEL="${MODEL}"
+DATASET="${DATASET}"
+TASK="semantic_parsing"
+COLUMN_EMBEDDINGS_PATH="${COLUMN_EMBEDDINGS_PATH}"
+QUESTION_EMBEDDINGS_TRAIN="${QUESTION_EMBEDDINGS_TRAIN}"
+QUESTION_EMBEDDINGS_DEV="${QUESTION_EMBEDDINGS_DEV}"
+QUESTION_EMBEDDINGS_TEST="${QUESTION_EMBEDDINGS_TEST}"
+DATASET_PATH="${DATASET_PATH}"
+CONFIG_PATH="${CONFIG_PATH}"
+TEST_FILE="${TEST_FILE}"
+TABLE_FILE="${TABLE_FILE}"
+STATUS_FILE="${STATUS_FILE}"
+RESULTS_DIR="${RESULTS_DIR}"
+RESULTS_FILE="${RESULTS_FILE}"
+OUTPUT_DIR="${OUTPUT_DIR}"
+
+# Hyperparameters
+SEED="${SEED}"
+BEAM_SIZE="${BEAM_SIZE}"
+
+# Job metadata
+SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
+JOB_KEY="${MODEL}_${DATASET}_${TASK}${QENC_SUFFIX}_seed${SEED}"
+LOG_PREFIX="[${JOB_KEY}]"
+
+# -----------------------------------------------------------------------------
+# Logging Functions
+# -----------------------------------------------------------------------------
+log_info() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} INFO: $*"
+}
+
+log_warn() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} WARN: $*" >&2
+}
+
+log_error() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} ERROR: $*" >&2
+}
+
+# -----------------------------------------------------------------------------
+# Status Update Functions (Atomic JSON updates with file locking)
+# -----------------------------------------------------------------------------
+update_status() {
+    local status="$1"
+    local message="${2:-}"
+    local exit_code="${3:-0}"
+
+    local timestamp
+    timestamp=$(date -Iseconds)
+
+    mkdir -p "$(dirname "${STATUS_FILE}")"
+
+    (
+        flock -w 10 200 || { log_warn "Could not acquire lock for status update"; return 1; }
+
+        if [[ ! -f "${STATUS_FILE}" ]]; then
+            echo '{}' > "${STATUS_FILE}"
+        fi
+
+        python3 << EOF
+import json
+
+status_file = "${STATUS_FILE}"
+job_key = "${JOB_KEY}"
+
+try:
+    with open(status_file, 'r') as f:
+        data = json.load(f)
+except (json.JSONDecodeError, FileNotFoundError):
+    data = {}
+
+data[job_key] = {
+    'status': "${status}",
+    'message': "${message}",
+    'exit_code': ${exit_code},
+    'timestamp': "${timestamp}",
+    'slurm_job_id': "${SLURM_JOB_ID}",
+    'model': "${MODEL}",
+    'dataset': "${DATASET}",
+    'task': "${TASK}",
+    'column_embeddings': "${COLUMN_EMBEDDINGS_PATH}",
+    'hyperparameters': {
+        'seed': ${SEED},
+        'beam_size': ${BEAM_SIZE},
+    },
+}
+
+with open(status_file, 'w') as f:
+    json.dump(data, f, indent=2)
+EOF
+    ) 200>"${STATUS_FILE}.lock"
+}
+
+# -----------------------------------------------------------------------------
+# Results Extraction Function
+# -----------------------------------------------------------------------------
+extract_metrics() {
+    local test_log="$1"
+
+    mkdir -p "$(dirname "${RESULTS_FILE}")"
+
+    python3 << EOF
+import json
+import re
+
+test_log = "${test_log}"
+results_file = "${RESULTS_FILE}"
+
+metrics = {
+    'model': "${MODEL}",
+    'dataset': "${DATASET}",
+    'task': "${TASK}",
+    'seed': ${SEED},
+    'slurm_job_id': "${SLURM_JOB_ID}",
+    'hyperparameters': {
+        'seed': ${SEED},
+        'beam_size': ${BEAM_SIZE},
+    },
+}
+
+try:
+    with open(test_log, 'r') as f:
+        content = f.read()
+
+    # Look for JSON metrics line in test output
+    # run_test.py logs: {"accuracy": ..., "oracle_accuracy": ...}
+    for line in content.strip().split('\n'):
+        line = line.strip()
+        if line.startswith('{') and 'accuracy' in line:
+            try:
+                eval_data = json.loads(line)
+                for key in ['accuracy', 'oracle_accuracy']:
+                    if key in eval_data:
+                        metrics[key] = eval_data[key]
+                break
+            except json.JSONDecodeError:
+                continue
+
+    # Fallback: parse "Accuracy: 0.1234 (12.34%)" patterns from run_test.py stdout
+    if 'accuracy' not in metrics:
+        m = re.search(r'^Accuracy:\s*([0-9.]+)', content, re.MULTILINE | re.IGNORECASE)
+        if m:
+            metrics['accuracy'] = float(m.group(1))
+        m = re.search(r'^Oracle Accuracy:\s*([0-9.]+)', content, re.MULTILINE | re.IGNORECASE)
+        if m:
+            metrics['oracle_accuracy'] = float(m.group(1))
+
+    metrics['status'] = 'completed' if 'accuracy' in metrics else 'no_metrics'
+except Exception as e:
+    metrics['status'] = 'error'
+    metrics['error'] = str(e)
+
+with open(results_file, 'w') as f:
+    json.dump(metrics, f, indent=2)
+print(f"Results saved to: {results_file}")
+EOF
+}
+
+# -----------------------------------------------------------------------------
+# Pre-flight Checks
+# -----------------------------------------------------------------------------
+preflight_checks() {
+    log_info "Running pre-flight checks..."
+
+    if [[ ! -f "${COLUMN_EMBEDDINGS_PATH}" ]]; then
+        log_error "Column embeddings file not found: ${COLUMN_EMBEDDINGS_PATH}"
+        return 1
+    fi
+    log_info "Column embeddings: ${COLUMN_EMBEDDINGS_PATH}"
+
+    for f in "${QUESTION_EMBEDDINGS_TRAIN}" "${QUESTION_EMBEDDINGS_DEV}" "${QUESTION_EMBEDDINGS_TEST}"; do
+        if [[ ! -f "$f" ]]; then
+            log_error "Question embeddings file not found: $f"
+            return 1
+        fi
+    done
+    log_info "Question embeddings: train/dev/test OK"
+
+    if [[ ! -d "${DATASET_PATH}" ]]; then
+        log_error "Dataset directory not found: ${DATASET_PATH}"
+        return 1
+    fi
+    log_info "Dataset path: ${DATASET_PATH}"
+
+    if [[ ! -f "${CONFIG_PATH}" ]]; then
+        log_error "Config file not found: ${CONFIG_PATH}"
+        return 1
+    fi
+    log_info "Config: ${CONFIG_PATH}"
+
+    if [[ ! -f "${TEST_FILE}" ]]; then
+        log_error "Test file not found: ${TEST_FILE}"
+        return 1
+    fi
+
+    if [[ ! -f "${TABLE_FILE}" ]]; then
+        log_error "Table file not found: ${TABLE_FILE}"
+        return 1
+    fi
+    log_info "Test/table files: OK"
+
+    log_info "Pre-flight checks passed"
+    return 0
+}
+
+# -----------------------------------------------------------------------------
+
+cleanup() {
+    local exit_code=$?
+    local end_time
+    end_time=$(date +%s)
+    local duration=$((end_time - START_TIME))
+
+    if [[ ${exit_code} -eq 0 ]]; then
+        log_info "Job completed successfully in ${duration} seconds"
+        update_status "COMPLETED" "Success" 0
+    else
+        log_error "Job failed with exit code ${exit_code} after ${duration} seconds"
+        update_status "FAILED" "Exit code: ${exit_code}" "${exit_code}"
+    fi
+}
+
+# =============================================================================
+# MAIN EXECUTION
+# =============================================================================
+
+START_TIME=$(date +%s)
+
+trap cleanup EXIT
+
+cd "${PROJECT_ROOT}"
+
+log_info "=========================================="
+log_info "Starting semantic parsing (WTQ / MAPO)"
+log_info "Model:              ${MODEL}"
+log_info "Dataset:            ${DATASET}"
+log_info "Column embeddings:  ${COLUMN_EMBEDDINGS_PATH}"
+log_info "Question emb train: ${QUESTION_EMBEDDINGS_TRAIN}"
+log_info "Question emb dev:   ${QUESTION_EMBEDDINGS_DEV}"
+log_info "Question emb test:  ${QUESTION_EMBEDDINGS_TEST}"
+log_info "Dataset path:       ${DATASET_PATH}"
+log_info "Config:             ${CONFIG_PATH}"
+log_info "SLURM Job:          ${SLURM_JOB_ID}"
+log_info "Hyperparameters:"
+log_info "  seed:             ${SEED}"
+log_info "  beam_size:        ${BEAM_SIZE}"
+log_info "=========================================="
+
+update_status "RUNNING" "Job started"
+
+if ! preflight_checks; then
+    log_error "Pre-flight checks failed"
+    exit 1
+fi
+
+
+# Setup environment
+log_info "Setting up environment..."
+${ENV_SETUP}
+
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
+
+log_info "Python: $(python --version 2>&1)"
+log_info "PyTorch: $(python -c 'import torch; print(torch.__version__)' 2>/dev/null || echo 'not found')"
+
+# Create output directory
+mkdir -p "${OUTPUT_DIR}"
+
+# Run training (uses python -m for package with relative imports)
+log_info "Starting MAPO training..."
+
+python -m trl_bench.tasks.semantic_parsing.run_training \
+    --column-pkl "${COLUMN_EMBEDDINGS_PATH}" \
+    --question-pkls "${QUESTION_EMBEDDINGS_TRAIN}" "${QUESTION_EMBEDDINGS_DEV}" \
+    --dataset-path "${DATASET_PATH}" \
+    --output-dir "${OUTPUT_DIR}" \
+    --config "${CONFIG_PATH}" \
+    --cuda \
+    --seed ${SEED} \
+    --resume \
+    2>&1
+
+# Run evaluation on test set if training produced a model
+BEST_MODEL="${OUTPUT_DIR}/model.best.bin"
+if [[ -f "${BEST_MODEL}" ]]; then
+    log_info "Starting evaluation on test set..."
+
+    python -m trl_bench.tasks.semantic_parsing.run_test \
+        --model "${BEST_MODEL}" \
+        --column-pkl "${COLUMN_EMBEDDINGS_PATH}" \
+        --question-pkls "${QUESTION_EMBEDDINGS_TEST}" \
+        --test-file "${TEST_FILE}" \
+        --table-file "${TABLE_FILE}" \
+        --cuda \
+        --beam-size ${BEAM_SIZE} \
+        2>&1
+
+    # run_test.py writes JSON to ${OUTPUT_DIR}/test.log (same dir as model.best.bin)
+    # Extract metrics from that file
+    if [[ -f "${OUTPUT_DIR}/test.log" ]]; then
+        extract_metrics "${OUTPUT_DIR}/test.log"
+    else
+        log_warn "No test log found at ${OUTPUT_DIR}/test.log"
+    fi
+else
+    log_error "Best model checkpoint not found: ${BEST_MODEL}"
+    exit 1
+fi
+
+log_info "Semantic parsing complete"

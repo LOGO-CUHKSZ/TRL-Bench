@@ -1,0 +1,154 @@
+#!/bin/bash
+#SBATCH --job-name=${JOB_NAME}
+#SBATCH --output=${LOG_DIR}/jobs/${BASELINE_NAME}_${DATASET}_${TASK}_%j.out
+#SBATCH --error=${LOG_DIR}/jobs/${BASELINE_NAME}_${DATASET}_${TASK}_%j.err
+#SBATCH --time=${TIME_LIMIT}
+#SBATCH --mem=${MEMORY}
+#SBATCH --cpus-per-task=${CPUS}
+#SBATCH --partition=${PARTITION}
+${EXTRA_SLURM_DIRECTIVES}
+
+# =============================================================================
+# SLURM Downstream Baseline: ${BASELINE_NAME}
+# Task: ${TASK}
+# Dataset: ${DATASET}
+# Generated: ${TIMESTAMP}
+# =============================================================================
+
+set -euo pipefail
+
+# -----------------------------------------------------------------------------
+# Configuration
+# -----------------------------------------------------------------------------
+PROJECT_ROOT="${PROJECT_ROOT}"
+BASELINE_NAME="${BASELINE_NAME}"
+DATASET="${DATASET}"
+TASK="${TASK}"
+STATUS_FILE="${STATUS_FILE}"
+
+# Baseline script
+SCRIPT_MODULE="${SCRIPT_MODULE}"
+SCRIPT_ARGS="${SCRIPT_ARGS}"
+
+# Job metadata
+SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
+JOB_KEY="${BASELINE_NAME}_${DATASET}_${TASK}"
+LOG_PREFIX="[${JOB_KEY}]"
+
+# -----------------------------------------------------------------------------
+# Logging Functions
+# -----------------------------------------------------------------------------
+log_info() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} INFO: $*"
+}
+
+log_warn() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} WARN: $*" >&2
+}
+
+log_error() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} ERROR: $*" >&2
+}
+
+# -----------------------------------------------------------------------------
+# Status Update Functions (Atomic JSON updates with file locking)
+# -----------------------------------------------------------------------------
+update_status() {
+    local status="$1"
+    local message="${2:-}"
+    local exit_code="${3:-0}"
+
+    local timestamp
+    timestamp=$(date -Iseconds)
+
+    mkdir -p "$(dirname "${STATUS_FILE}")"
+
+    (
+        flock -w 10 200 || { log_warn "Could not acquire lock for status update"; return 1; }
+
+        if [[ ! -f "${STATUS_FILE}" ]]; then
+            echo '{}' > "${STATUS_FILE}"
+        fi
+
+        python3 << EOF
+import json
+
+status_file = "${STATUS_FILE}"
+job_key = "${JOB_KEY}"
+
+try:
+    with open(status_file, 'r') as f:
+        data = json.load(f)
+except (json.JSONDecodeError, FileNotFoundError):
+    data = {}
+
+data[job_key] = {
+    'status': "${status}",
+    'message': "${message}",
+    'exit_code': ${exit_code},
+    'timestamp': "${timestamp}",
+    'slurm_job_id': "${SLURM_JOB_ID}",
+    'baseline': "${BASELINE_NAME}",
+    'dataset': "${DATASET}",
+    'task': "${TASK}",
+}
+
+with open(status_file, 'w') as f:
+    json.dump(data, f, indent=2)
+EOF
+    ) 200>"${STATUS_FILE}.lock"
+}
+
+# -----------------------------------------------------------------------------
+# Cleanup Handler
+# -----------------------------------------------------------------------------
+cleanup() {
+    local exit_code=$?
+    local end_time
+    end_time=$(date +%s)
+    local duration=$((end_time - START_TIME))
+
+    if [[ ${exit_code} -eq 0 ]]; then
+        log_info "Job completed successfully in ${duration} seconds"
+        update_status "COMPLETED" "Success" 0
+    else
+        log_error "Job failed with exit code ${exit_code} after ${duration} seconds"
+        update_status "FAILED" "Exit code: ${exit_code}" "${exit_code}"
+    fi
+}
+
+# =============================================================================
+# MAIN EXECUTION
+# =============================================================================
+
+START_TIME=$(date +%s)
+
+trap cleanup EXIT
+
+cd "${PROJECT_ROOT}"
+
+log_info "=========================================="
+log_info "Starting baseline evaluation"
+log_info "Baseline:  ${BASELINE_NAME}"
+log_info "Task:      ${TASK}"
+log_info "Dataset:   ${DATASET}"
+log_info "Script:    python -m ${SCRIPT_MODULE}"
+log_info "Args:      ${SCRIPT_ARGS}"
+log_info "SLURM Job: ${SLURM_JOB_ID}"
+log_info "=========================================="
+
+update_status "RUNNING" "Job started"
+
+# Setup environment
+log_info "Setting up environment..."
+${ENV_SETUP}
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
+
+log_info "Python: $(python --version 2>&1)"
+
+# Run baseline
+# The baseline script writes its own results JSON — no stdout parsing needed.
+log_info "Running baseline..."
+python -m ${SCRIPT_MODULE} ${SCRIPT_ARGS}
+
+log_info "Baseline evaluation complete"

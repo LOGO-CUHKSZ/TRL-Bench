@@ -1,0 +1,314 @@
+#!/bin/bash
+#SBATCH --job-name=${JOB_NAME}
+#SBATCH --output=${LOG_DIR}/jobs/${MODEL}_${DATASET}_schema_matching_%j.out
+#SBATCH --error=${LOG_DIR}/jobs/${MODEL}_${DATASET}_schema_matching_%j.err
+#SBATCH --time=${TIME_LIMIT}
+#SBATCH --mem=${MEMORY}
+#SBATCH --cpus-per-task=${CPUS}
+#SBATCH --partition=${PARTITION}
+${EXTRA_SLURM_DIRECTIVES}
+
+# =============================================================================
+# SLURM Downstream Task: Schema Matching
+# Model: ${MODEL}
+# Dataset: ${DATASET}
+# Generated: ${TIMESTAMP}
+# =============================================================================
+
+set -euo pipefail
+
+# -----------------------------------------------------------------------------
+# Configuration
+# -----------------------------------------------------------------------------
+PROJECT_ROOT="${PROJECT_ROOT}"
+MODEL="${MODEL}"
+DATASET="${DATASET}"
+TASK="schema_matching"
+EMBEDDINGS_PATH="${EMBEDDINGS_PATH}"
+PAIRS_PATH="${PAIRS_PATH}"
+GROUND_TRUTH_PATH="${GROUND_TRUTH_PATH}"
+TABLES_DIR="${TABLES_DIR}"
+STATUS_FILE="${STATUS_FILE}"
+RESULTS_DIR="${RESULTS_DIR}"
+RESULTS_FILE="${RESULTS_FILE}"
+
+# Hyperparameters
+MATCHING_STRATEGY="${MATCHING_STRATEGY}"
+THRESHOLD="${THRESHOLD}"
+
+# Job metadata
+SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
+JOB_KEY="${MODEL}_${DATASET}_${TASK}"
+LOG_PREFIX="[${JOB_KEY}]"
+
+# -----------------------------------------------------------------------------
+# Logging Functions
+# -----------------------------------------------------------------------------
+log_info() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} INFO: $*"
+}
+
+log_warn() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} WARN: $*" >&2
+}
+
+log_error() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} ERROR: $*" >&2
+}
+
+# -----------------------------------------------------------------------------
+# Status Update Functions (Atomic JSON updates with file locking)
+# -----------------------------------------------------------------------------
+update_status() {
+    local status="$1"
+    local message="${2:-}"
+    local exit_code="${3:-0}"
+
+    local timestamp
+    timestamp=$(date -Iseconds)
+
+    mkdir -p "$(dirname "${STATUS_FILE}")"
+
+    (
+        flock -w 10 200 || { log_warn "Could not acquire lock for status update"; return 1; }
+
+        if [[ ! -f "${STATUS_FILE}" ]]; then
+            echo '{}' > "${STATUS_FILE}"
+        fi
+
+        python3 << EOF
+import json
+
+status_file = "${STATUS_FILE}"
+job_key = "${JOB_KEY}"
+
+try:
+    with open(status_file, 'r') as f:
+        data = json.load(f)
+except (json.JSONDecodeError, FileNotFoundError):
+    data = {}
+
+data[job_key] = {
+    'status': "${status}",
+    'message': "${message}",
+    'exit_code': ${exit_code},
+    'timestamp': "${timestamp}",
+    'slurm_job_id': "${SLURM_JOB_ID}",
+    'model': "${MODEL}",
+    'dataset': "${DATASET}",
+    'task': "${TASK}",
+    'embeddings': "${EMBEDDINGS_PATH}",
+    'hyperparameters': {
+        'matching_strategy': "${MATCHING_STRATEGY}",
+        'threshold': ${THRESHOLD},
+    },
+}
+
+with open(status_file, 'w') as f:
+    json.dump(data, f, indent=2)
+EOF
+    ) 200>"${STATUS_FILE}.lock"
+}
+
+# -----------------------------------------------------------------------------
+# Results Extraction Function
+# -----------------------------------------------------------------------------
+extract_metrics() {
+    local output_file="$1"
+
+    mkdir -p "$(dirname "${RESULTS_FILE}")"
+
+    python3 << EOF
+import json
+import re
+
+output_file = "${output_file}"
+results_file = "${RESULTS_FILE}"
+
+metrics = {
+    'model': "${MODEL}",
+    'dataset': "${DATASET}",
+    'task': "${TASK}",
+    'slurm_job_id': "${SLURM_JOB_ID}",
+    'hyperparameters': {
+        'matching_strategy': "${MATCHING_STRATEGY}",
+        'threshold': ${THRESHOLD},
+    },
+}
+
+try:
+    with open(output_file, 'r') as f:
+        output = f.read()
+
+    # Extract Micro P/R/F1
+    match = re.search(r'Micro Precision:\s+([0-9.]+)', output)
+    if match:
+        metrics['micro_precision'] = float(match.group(1))
+
+    match = re.search(r'Micro Recall:\s+([0-9.]+)', output)
+    if match:
+        metrics['micro_recall'] = float(match.group(1))
+
+    match = re.search(r'Micro F1:\s+([0-9.]+)', output)
+    if match:
+        metrics['micro_f1'] = float(match.group(1))
+
+    # Extract Macro P/R/F1
+    match = re.search(r'Macro Precision:\s+([0-9.]+)', output)
+    if match:
+        metrics['macro_precision'] = float(match.group(1))
+
+    match = re.search(r'Macro Recall:\s+([0-9.]+)', output)
+    if match:
+        metrics['macro_recall'] = float(match.group(1))
+
+    match = re.search(r'Macro F1:\s+([0-9.]+)', output)
+    if match:
+        metrics['macro_f1'] = float(match.group(1))
+
+    # Extract pair counts
+    match = re.search(r'Pairs evaluated:\s+(\d+)', output)
+    if match:
+        metrics['pairs_evaluated'] = int(match.group(1))
+
+    match = re.search(r'Pairs skipped:\s+(\d+)', output)
+    if match:
+        metrics['pairs_skipped'] = int(match.group(1))
+
+    # Extract Recall@GT (primary metric)
+    match = re.search(r'Recall@GT:\s+([0-9.]+)', output)
+    if match:
+        metrics['recall_at_gt'] = float(match.group(1))
+
+    # Extract GT Coverage
+    match = re.search(r'GT Coverage:\s+([0-9.]+)', output)
+    if match:
+        metrics['gt_coverage'] = float(match.group(1))
+
+    metrics['status'] = 'completed'
+except Exception as e:
+    metrics['status'] = 'error'
+    metrics['error'] = str(e)
+
+with open(results_file, 'w') as f:
+    json.dump(metrics, f, indent=2)
+print(f"Results saved to: {results_file}")
+EOF
+}
+
+# -----------------------------------------------------------------------------
+# Pre-flight Checks
+# -----------------------------------------------------------------------------
+preflight_checks() {
+    log_info "Running pre-flight checks..."
+
+    if [[ ! -f "${EMBEDDINGS_PATH}" ]]; then
+        log_error "Embeddings file not found: ${EMBEDDINGS_PATH}"
+        return 1
+    fi
+    log_info "Embeddings: ${EMBEDDINGS_PATH}"
+
+    if [[ ! -f "${PAIRS_PATH}" ]]; then
+        log_error "Pairs file not found: ${PAIRS_PATH}"
+        return 1
+    fi
+    log_info "Pairs: ${PAIRS_PATH}"
+
+    if [[ ! -f "${GROUND_TRUTH_PATH}" ]]; then
+        log_error "Ground truth not found: ${GROUND_TRUTH_PATH}"
+        return 1
+    fi
+    log_info "Ground truth: ${GROUND_TRUTH_PATH}"
+
+    if [[ ! -d "${TABLES_DIR}" ]]; then
+        log_error "Tables directory not found: ${TABLES_DIR}"
+        return 1
+    fi
+    log_info "Tables dir: ${TABLES_DIR}"
+
+    log_info "Pre-flight checks passed"
+    return 0
+}
+
+# -----------------------------------------------------------------------------
+# Cleanup Handler
+# -----------------------------------------------------------------------------
+cleanup() {
+    local exit_code=$?
+    local end_time
+    end_time=$(date +%s)
+    local duration=$((end_time - START_TIME))
+
+    if [[ ${exit_code} -eq 0 ]]; then
+        log_info "Job completed successfully in ${duration} seconds"
+        update_status "COMPLETED" "Success" 0
+    else
+        log_error "Job failed with exit code ${exit_code} after ${duration} seconds"
+        update_status "FAILED" "Exit code: ${exit_code}" "${exit_code}"
+    fi
+}
+
+# =============================================================================
+# MAIN EXECUTION
+# =============================================================================
+
+START_TIME=$(date +%s)
+
+trap cleanup EXIT
+
+cd "${PROJECT_ROOT}"
+
+log_info "=========================================="
+log_info "Starting schema matching evaluation"
+log_info "Model:        ${MODEL}"
+log_info "Dataset:      ${DATASET}"
+log_info "Embeddings:   ${EMBEDDINGS_PATH}"
+log_info "Pairs:        ${PAIRS_PATH}"
+log_info "Ground truth: ${GROUND_TRUTH_PATH}"
+log_info "Tables dir:   ${TABLES_DIR}"
+log_info "SLURM Job:    ${SLURM_JOB_ID}"
+log_info "Hyperparameters:"
+log_info "  matching_strategy: ${MATCHING_STRATEGY}"
+log_info "  threshold:         ${THRESHOLD}"
+log_info "=========================================="
+
+update_status "RUNNING" "Job started"
+
+if ! preflight_checks; then
+    log_error "Pre-flight checks failed"
+    exit 1
+fi
+
+# Setup environment
+log_info "Setting up environment..."
+${ENV_SETUP}
+
+log_info "Python: $(python --version 2>&1)"
+
+# Create output directory
+mkdir -p "${RESULTS_DIR}"
+
+# Create temp file for output capture
+OUTPUT_CAPTURE=$(mktemp)
+
+# Run schema matching evaluation
+log_info "Starting schema matching evaluation..."
+
+python ${SCRIPT_PATH} \
+    --embeddings "${EMBEDDINGS_PATH}" \
+    --pairs "${PAIRS_PATH}" \
+    --ground_truth "${GROUND_TRUTH_PATH}" \
+    --tables_dir "${TABLES_DIR}" \
+    --output_dir "${RESULTS_DIR}" \
+    --matching_strategy "${MATCHING_STRATEGY}" \
+    --threshold ${THRESHOLD} \
+    2>&1 | tee "${OUTPUT_CAPTURE}"
+
+# Extract metrics from output
+log_info "Extracting metrics..."
+extract_metrics "${OUTPUT_CAPTURE}"
+
+# Cleanup temp file
+rm -f "${OUTPUT_CAPTURE}"
+
+log_info "Schema matching evaluation complete"

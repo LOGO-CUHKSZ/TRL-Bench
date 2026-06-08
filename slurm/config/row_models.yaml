@@ -1,0 +1,433 @@
+# Row embedding model configurations for SLURM generation
+#
+# Each model defines:
+#   - script: Path to the directory-mode embedding generation script
+#   - model_type: "pretrained" (no training needed) or "trained" (trains per-table)
+#   - env_setup: Shell command to setup environment
+#   - args: Mapping of logical argument names to CLI flags
+#   - defaults: Default parameter values
+#   - requires_label_columns: Whether --label_columns is mandatory
+
+models:
+  tabpfn:
+    script: "src/trl_bench/models/tabpfn/generate_embeddings_directory.py"
+    model_type: pretrained
+    env_setup: "source load_env"
+    args:
+      input_dir: "--input_dir"
+      output_path: "--output_path"
+      n_estimators: "--n_estimators"
+      device: "--device"
+      checkpoint_interval: "--checkpoint_interval"
+      label_columns: "--label_columns"
+    defaults:
+      n_estimators: 8
+      device: "auto"
+      checkpoint_interval: 50
+    shard_overrides:
+      wiki_tables_shuffled_column: 40
+      wiki_tables_shuffled_row: 40
+      dlte_v1_all: 40
+
+  tuta:
+    script: "src/trl_bench/models/tuta/generate_embeddings_directory.py"
+    model_type: pretrained
+    checkpoint: "checkpoints/tuta/tuta.bin"
+    env_setup: "source load_env"
+    args:
+      input_dir: "--input_dir"
+      output_path: "--output_path"
+      model_path: "--model_path"
+      model_type: "--model_type"
+      device_id: "--device_id"
+      checkpoint_interval: "--checkpoint_interval"
+      label_columns: "--label_columns"
+    defaults:
+      model_type: "tuta"
+      checkpoint_interval: 50
+
+  tabicl:
+    script: "src/trl_bench/models/tabicl/generate_embeddings_directory.py"
+    model_type: pretrained
+    env_setup: "source load_env"
+    args:
+      input_dir: "--input_dir"
+      output_path: "--output_path"
+      n_estimators: "--n_estimators"
+      device: "--device"
+      checkpoint_version: "--checkpoint_version"
+      checkpoint_interval: "--checkpoint_interval"
+      label_columns: "--label_columns"
+    defaults:
+      n_estimators: 1
+      device: "auto"
+      checkpoint_interval: 50
+
+  scarf:
+    script: "src/trl_bench/models/scarf/generate_embeddings_directory.py"
+    model_type: trained
+    env_setup: "source load_env"
+    args:
+      input_dir: "--input_dir"
+      output_path: "--output_path"
+      checkpoint_base_dir: "--checkpoint_base_dir"
+      batch_size: "--batch_size"
+      phase1_epochs: "--phase1_epochs"
+      hidden_dim: "--hidden_dim"
+      n_hidden_layers: "--n_hidden_layers"
+      corruption_rate: "--corruption_rate"
+
+      random_seed: "--random_seed"
+      checkpoint_interval: "--checkpoint_interval"
+      label_columns: "--label_columns"
+    defaults:
+      batch_size: 128
+      phase1_epochs: 20
+      hidden_dim: 512
+      n_hidden_layers: 3
+      corruption_rate: 0.6
+
+      random_seed: 42
+      checkpoint_interval: 50
+
+  switchtab:
+    script: "src/trl_bench/models/switchtab/generate_embeddings_directory.py"
+    model_type: trained
+    env_setup: "source load_env"
+    args:
+      input_dir: "--input_dir"
+      output_path: "--output_path"
+      checkpoint_base_dir: "--checkpoint_base_dir"
+      batch_size: "--batch_size"
+      phase1_epochs: "--phase1_epochs"
+      hidden_dim: "--hidden_dim"
+      n_hidden_layers: "--n_hidden_layers"
+      corruption_rate: "--corruption_rate"
+      alpha: "--alpha"
+
+      random_seed: "--random_seed"
+      checkpoint_interval: "--checkpoint_interval"
+      label_columns: "--label_columns"
+    defaults:
+      batch_size: 128
+      phase1_epochs: 20
+      hidden_dim: 512
+      n_hidden_layers: 3
+      corruption_rate: 0.3
+      alpha: 1.0
+
+      random_seed: 42
+      checkpoint_interval: 50
+
+  subtab:
+    script: "src/trl_bench/models/subtab/generate_embeddings_directory.py"
+    model_type: trained
+    env_setup: "source load_env"
+    args:
+      input_dir: "--input_dir"
+      output_path: "--output_path"
+      checkpoint_base_dir: "--checkpoint_base_dir"
+      batch_size: "--batch_size"
+      phase1_epochs: "--phase1_epochs"
+      hidden_dim: "--hidden_dim"
+      n_hidden_layers: "--n_hidden_layers"
+      n_subsets: "--n_subsets"
+      overlap_ratio: "--overlap_ratio"
+
+      random_seed: "--random_seed"
+      checkpoint_interval: "--checkpoint_interval"
+      label_columns: "--label_columns"
+    defaults:
+      batch_size: 128
+      phase1_epochs: 20
+      hidden_dim: 512
+      n_hidden_layers: 3
+      n_subsets: 4
+      overlap_ratio: 0.75
+
+      random_seed: 42
+      checkpoint_interval: 50
+
+  vime:
+    script: "src/trl_bench/models/vime/generate_embeddings_directory.py"
+    model_type: trained
+    env_setup: "source load_env"
+    args:
+      input_dir: "--input_dir"
+      output_path: "--output_path"
+      checkpoint_base_dir: "--checkpoint_base_dir"
+      batch_size: "--batch_size"
+      phase1_epochs: "--phase1_epochs"
+      hidden_dim: "--hidden_dim"
+      n_hidden_layers: "--n_hidden_layers"
+      p_m: "--p_m"
+
+      random_seed: "--random_seed"
+      checkpoint_interval: "--checkpoint_interval"
+      label_columns: "--label_columns"
+    defaults:
+      batch_size: 128
+      phase1_epochs: 20
+      hidden_dim: 512
+      n_hidden_layers: 3
+      p_m: 0.3
+
+      random_seed: 42
+      checkpoint_interval: 50
+
+  dae:
+    script: "src/trl_bench/models/dae/generate_embeddings_directory.py"
+    model_type: trained
+    env_setup: "source load_env"
+    args:
+      input_dir: "--input_dir"
+      output_path: "--output_path"
+      checkpoint_base_dir: "--checkpoint_base_dir"
+      batch_size: "--batch_size"
+      phase1_epochs: "--phase1_epochs"
+      hidden_dim: "--hidden_dim"
+      n_hidden_layers: "--n_hidden_layers"
+      noise_type: "--noise_type"
+      noise_ratio: "--noise_ratio"
+
+      random_seed: "--random_seed"
+      checkpoint_interval: "--checkpoint_interval"
+      label_columns: "--label_columns"
+    defaults:
+      batch_size: 128
+      phase1_epochs: 20
+      hidden_dim: 512
+      n_hidden_layers: 3
+      noise_type: "Swap"
+      noise_ratio: 0.3
+
+      random_seed: 42
+      checkpoint_interval: 50
+
+  bert:
+    script: "src/trl_bench/models/bert/generate_row_embeddings.py"
+    model_type: pretrained
+    env_setup: "source load_env"
+    args:
+      input_dir: "--input_dir"
+      output_path: "--output_path"
+      model: "--model"
+      device: "--device"
+      max_length: "--max_length"
+      max_chars_per_cell: "--max_chars_per_cell"
+      row_batch_size: "--row_batch_size"
+      checkpoint_interval: "--checkpoint_interval"
+      label_columns: "--label_columns"
+    defaults:
+      model: "bert-base-uncased"
+      device: "auto"
+      max_length: 512
+      max_chars_per_cell: 50
+      row_batch_size: 64
+      checkpoint_interval: 50
+
+  gte:
+    script: "src/trl_bench/models/gte/generate_row_embeddings.py"
+    model_type: pretrained
+    env_setup: "source load_env"
+    args:
+      input_dir: "--input_dir"
+      output_path: "--output_path"
+      model: "--model"
+      device: "--device"
+      max_length: "--max_length"
+      max_chars_per_cell: "--max_chars_per_cell"
+      row_batch_size: "--row_batch_size"
+      checkpoint_interval: "--checkpoint_interval"
+      label_columns: "--label_columns"
+    defaults:
+      model: "thenlper/gte-base"
+      device: "auto"
+      max_length: 512
+      max_chars_per_cell: 100
+      row_batch_size: 64
+      checkpoint_interval: 50
+
+  tabbie:
+    script: "src/trl_bench/models/tabbie/generate_row_embeddings.py"
+    model_type: pretrained
+    checkpoint: "checkpoints/tabbie/weights.pt"
+    env_setup: "source load_env"
+    args:
+      input_dir: "--input_dir"
+      output_path: "--output_path"
+      model_path: "--model_path"
+      device_id: "--device_id"
+      checkpoint_interval: "--checkpoint_interval"
+      label_columns: "--label_columns"
+      bert_model_name: "--bert_model_name"
+      row_batch_size: "--row_batch_size"
+    defaults:
+      checkpoint_interval: 50
+      row_batch_size: 32
+
+  tabular_binning:
+    script: "src/trl_bench/models/tabular_binning/generate_embeddings_directory.py"
+    model_type: trained
+    env_setup: "source load_env"
+    args:
+      input_dir: "--input_dir"
+      output_path: "--output_path"
+      checkpoint_base_dir: "--checkpoint_base_dir"
+      batch_size: "--batch_size"
+      phase1_epochs: "--phase1_epochs"
+      hidden_dim: "--hidden_dim"
+      n_hidden_layers: "--n_hidden_layers"
+      n_bin: "--n_bin"
+      pretext_task: "--pretext_task"
+      decoder_dim: "--decoder_dim"
+      decoder_depth: "--decoder_depth"
+      p_m: "--p_m"
+      mask_type: "--mask_type"
+      dropout_rate: "--dropout_rate"
+      random_seed: "--random_seed"
+      checkpoint_interval: "--checkpoint_interval"
+      label_columns: "--label_columns"
+    defaults:
+      batch_size: 128
+      phase1_epochs: 20
+      hidden_dim: 512
+      n_hidden_layers: 3
+      n_bin: 10
+      pretext_task: BinRecon
+      decoder_dim: 128
+      decoder_depth: 3
+      p_m: 0.2
+      mask_type: random
+      dropout_rate: 0.2
+      random_seed: 42
+      checkpoint_interval: 50
+
+  transtab:
+    script: "src/trl_bench/models/transtab/generate_embeddings_directory.py"
+    model_type: trained
+    env_setup: "source load_env"
+    args:
+      input_dir: "--input_dir"
+      output_path: "--output_path"
+      checkpoint_base_dir: "--checkpoint_base_dir"
+      batch_size: "--batch_size"
+      num_epoch: "--num_epoch"
+      hidden_dim: "--hidden_dim"
+      num_layer: "--num_layer"
+      num_attention_head: "--num_attention_head"
+      num_partition: "--num_partition"
+      overlap_ratio: "--overlap_ratio"
+      lr: "--lr"
+      random_seed: "--random_seed"
+      checkpoint_interval: "--checkpoint_interval"
+      label_columns: "--label_columns"
+    defaults:
+      batch_size: 64
+      num_epoch: 50
+      hidden_dim: 512
+      num_layer: 2
+      num_attention_head: 8
+      num_partition: 3
+      overlap_ratio: 0.5
+      lr: 0.0001
+      random_seed: 42
+      checkpoint_interval: 50
+    shard_overrides:
+      wiki_tables_shuffled_column: 100
+      wiki_tables_shuffled_row: 100
+      dlte_v1_queries: 20
+      dlte_v1_targets: 20
+    resource_overrides:
+      wiki_tables_shuffled_column:
+        time_limit: "8:00:00"
+        partition: "YOUR_GPU_PARTITION_LARGE"
+      wiki_tables_shuffled_row:
+        time_limit: "8:00:00"
+        partition: "YOUR_GPU_PARTITION_LARGE"
+
+  saint:
+    script: "src/trl_bench/models/saint/generate_embeddings_directory.py"
+    model_type: trained
+    env_setup: "source load_env"
+    args:
+      input_dir: "--input_dir"
+      output_path: "--output_path"
+      checkpoint_base_dir: "--checkpoint_base_dir"
+      batch_size: "--batch_size"
+      phase1_epochs: "--phase1_epochs"
+      emb_dim: "--emb_dim"
+      encoder_depth: "--encoder_depth"
+      n_head: "--n_head"
+      ffn_factor: "--ffn_factor"
+      saint_variant: "--saint_variant"
+      cutmix_probability: "--cutmix_probability"
+      mixup_alpha: "--mixup_alpha"
+      tau: "--tau"
+      lambda_denoise: "--lambda_denoise"
+      pretraining_head_dim: "--pretraining_head_dim"
+      dropout_rate: "--dropout_rate"
+      random_seed: "--random_seed"
+      checkpoint_interval: "--checkpoint_interval"
+      label_columns: "--label_columns"
+    defaults:
+      batch_size: 128
+      phase1_epochs: 20
+      emb_dim: 512
+      encoder_depth: 6
+      n_head: 8
+      ffn_factor: 4.0
+      saint_variant: saint
+      cutmix_probability: 0.3
+      mixup_alpha: 0.2
+      tau: 0.7
+      lambda_denoise: 10.0
+      pretraining_head_dim: 256
+      dropout_rate: 0.0
+      random_seed: 42
+      checkpoint_interval: 50
+
+  tabtransformer:
+    script: "src/trl_bench/models/tabtransformer/generate_embeddings_directory.py"
+    model_type: trained
+    env_setup: "source load_env"
+    args:
+      input_dir: "--input_dir"
+      output_path: "--output_path"
+      checkpoint_base_dir: "--checkpoint_base_dir"
+      batch_size: "--batch_size"
+      phase1_epochs: "--phase1_epochs"
+      hidden_dim: "--hidden_dim"
+      n_hidden_layers: "--n_hidden_layers"
+      emb_dim: "--emb_dim"
+      n_transformer_layers: "--n_transformer_layers"
+      n_heads: "--n_heads"
+      mlm_probability: "--mlm_probability"
+      rtd_probability: "--rtd_probability"
+      random_seed: "--random_seed"
+      checkpoint_interval: "--checkpoint_interval"
+      label_columns: "--label_columns"
+    defaults:
+      batch_size: 128
+      phase1_epochs: 20
+      hidden_dim: 512
+      n_hidden_layers: 3
+      emb_dim: 32
+      n_transformer_layers: 6
+      n_heads: 8
+      mlm_probability: 0.15
+      rtd_probability: 0.15
+      random_seed: 42
+      checkpoint_interval: 50
+
+# Output format:
+# All models produce aggregate pickle:
+#   [{
+#       'table': 'path/to/table.csv',
+#       'table_id': 'table_name',
+#       'row_embeddings': np.ndarray (n_rows, embedding_dim),
+#       'column_names': ['col1', 'col2', ...],
+#       'model_name': 'TabICL',
+#       'embedding_dim': 512,
+#       'num_rows': 42,
+#   }, ...]

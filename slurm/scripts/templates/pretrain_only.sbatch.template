@@ -1,0 +1,163 @@
+#!/bin/bash
+#SBATCH --job-name=emb_${MODEL}_${DATASET}_pretrain
+#SBATCH --output=${LOG_DIR}/jobs/${MODEL}_${DATASET}_pretrain_%j.out
+#SBATCH --error=${LOG_DIR}/jobs/${MODEL}_${DATASET}_pretrain_%j.err
+#SBATCH --time=${TIME_LIMIT}
+#SBATCH --mem=${MEMORY}
+#SBATCH --gres=gpu:${GPUS}
+#SBATCH --cpus-per-task=${CPUS}
+#SBATCH --partition=${PARTITION}
+${EXTRA_SLURM_DIRECTIVES}
+
+# =============================================================================
+# SLURM Pretrain-Only Job (Starmie)
+# Model: ${MODEL}
+# Dataset: ${DATASET}
+# Generated: ${TIMESTAMP}
+# =============================================================================
+
+set -euo pipefail
+
+# -----------------------------------------------------------------------------
+# Configuration
+# -----------------------------------------------------------------------------
+PROJECT_ROOT="${PROJECT_ROOT}"
+MODEL="${MODEL}"
+DATASET="${DATASET}"
+CHECKPOINT="${CHECKPOINT}"
+INPUT_DIR="${INPUT_DIR}"
+STATUS_FILE="${STATUS_FILE}"
+PRETRAIN_SCRIPT="${PRETRAIN_SCRIPT}"
+PRETRAIN_ARGS="${PRETRAIN_ARGS}"
+
+# Job metadata
+SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
+JOB_KEY="${MODEL}_${DATASET}_pretrain"
+LOG_PREFIX="[${JOB_KEY}]"
+
+# -----------------------------------------------------------------------------
+# Logging Functions
+# -----------------------------------------------------------------------------
+log_info() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} INFO: $*"
+}
+
+log_error() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} ERROR: $*" >&2
+}
+
+# -----------------------------------------------------------------------------
+# Status Update
+# -----------------------------------------------------------------------------
+update_status() {
+    local status="$1"
+    local message="${2:-}"
+    local exit_code="${3:-0}"
+    local timestamp
+    timestamp=$(date -Iseconds)
+
+    mkdir -p "$(dirname "${STATUS_FILE}")"
+
+    (
+        flock -w 10 200 || { echo "WARN: Could not acquire lock"; return 1; }
+
+        if [[ ! -f "${STATUS_FILE}" ]]; then
+            echo '{}' > "${STATUS_FILE}"
+        fi
+
+        python3 << EOF
+import json
+
+status_file = "${STATUS_FILE}"
+job_key = "${JOB_KEY}"
+
+try:
+    with open(status_file, 'r') as f:
+        data = json.load(f)
+except (json.JSONDecodeError, FileNotFoundError):
+    data = {}
+
+data[job_key] = {
+    'status': "${status}",
+    'message': "${message}",
+    'exit_code': ${exit_code},
+    'timestamp': "${timestamp}",
+    'slurm_job_id': "${SLURM_JOB_ID}",
+    'model': "${MODEL}",
+    'dataset': "${DATASET}",
+    'checkpoint': "${CHECKPOINT}",
+    'input_dir': "${INPUT_DIR}",
+    'shard_type': 'pretrain',
+    'shard_index': -1,
+    'num_shards': ${NUM_SHARDS},
+}
+
+with open(status_file, 'w') as f:
+    json.dump(data, f, indent=2)
+EOF
+    ) 200>"${STATUS_FILE}.lock"
+}
+
+# -----------------------------------------------------------------------------
+# Cleanup Handler
+# -----------------------------------------------------------------------------
+cleanup() {
+    local exit_code=$?
+    if [[ ${exit_code} -eq 0 ]]; then
+        log_info "Pretraining completed successfully"
+        update_status "COMPLETED" "Pretraining success" 0
+    else
+        log_error "Pretraining failed with exit code ${exit_code}"
+        update_status "FAILED" "Pretraining failed: exit code ${exit_code}" "${exit_code}"
+    fi
+}
+
+# =============================================================================
+# MAIN EXECUTION
+# =============================================================================
+
+trap cleanup EXIT
+
+cd "${PROJECT_ROOT}"
+
+log_info "=========================================="
+log_info "Starting pretraining"
+log_info "Model:      ${MODEL}"
+log_info "Dataset:    ${DATASET}"
+log_info "Checkpoint: ${CHECKPOINT}"
+log_info "Input:      ${INPUT_DIR}"
+log_info "=========================================="
+
+update_status "RUNNING" "Pretraining started"
+
+# GPU verification
+if command -v nvidia-smi &> /dev/null; then
+    gpu_info=$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || echo "Unknown")
+    log_info "GPU: ${gpu_info}"
+fi
+
+# Setup environment
+${ENV_SETUP}
+
+# Run pretraining
+if [[ -f "${CHECKPOINT}" ]]; then
+    log_info "Checkpoint already exists: ${CHECKPOINT}"
+    log_info "Skipping pretraining phase"
+else
+    log_info "Checkpoint not found, starting pretraining..."
+    mkdir -p "$(dirname "${CHECKPOINT}")"
+
+    python ${PRETRAIN_SCRIPT} \
+        --data_path "${INPUT_DIR}" \
+        --checkpoint_dir "$(dirname "$(dirname "${CHECKPOINT}")")" \
+        ${PRETRAIN_ARGS}
+
+    if [[ -f "${CHECKPOINT}" ]]; then
+        log_info "Pretraining complete. Checkpoint: ${CHECKPOINT}"
+    else
+        log_error "Pretraining failed - checkpoint not created: ${CHECKPOINT}"
+        exit 1
+    fi
+fi
+
+log_info "Pretrain-only job complete"

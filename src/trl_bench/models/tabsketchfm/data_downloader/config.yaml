@@ -1,0 +1,60 @@
+# Full-Featured Data Downloader Configuration
+
+# Input/Output Paths
+urls_file: "../pretraining_tables.txt"
+output_dir: "/path/to/TRL-Bench/datasets/tabsketchfm/opendata"
+metadata_dir: "/path/to/TRL-Bench/datasets/tabsketchfm/opendata_metadata"
+progress_file: "./download_progress.json"
+error_log: "./download_errors.log"
+
+# Download Settings
+max_workers: 20  # Number of parallel downloads
+timeout: 60  # Timeout in seconds for each request
+max_retries: 3  # Number of retry attempts
+retry_delay: 5  # Seconds to wait between retries
+chunk_size: 8192  # Download chunk size in bytes
+
+# Rate Limiting (requests per second)
+rate_limits:
+  default: 2  # Default rate limit
+  socrata: 1  # Socrata API rate limit
+  ckan: 1  # CKAN API rate limit
+  direct: 5  # Direct file downloads
+
+# API Keys (optional - set via environment variables or here)
+api_keys:
+  socrata_app_token: null  # Set SOCRATA_APP_TOKEN env var
+  ckan_api_key: null  # Set CKAN_API_KEY env var
+
+# File Handling
+max_file_size_mb: 5000  # Skip files larger than this
+allowed_extensions:
+  - .csv
+  - .xls
+  - .xlsx
+  - .tsv
+  - .txt
+
+# Resume Settings
+resume_enabled: true
+checkpoint_interval: 100  # Save progress every N downloads
+
+# Metadata Settings
+extract_metadata: true
+metadata_fields:
+  - title
+  - description
+  - source_url
+  - download_date
+  - file_size
+  - num_rows
+  - num_columns
+  - column_names
+
+# URL Classification
+skip_invalid_urls: true
+validate_ssl: false  # Many old URLs have SSL issues
+
+# Logging
+log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+verbose: true

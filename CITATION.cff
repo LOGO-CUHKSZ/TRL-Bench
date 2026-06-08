@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+# Placeholder author identity: "TRL-Bench Authors". Replace with the camera-ready
+# author list before publication (also propagate to pyproject.toml [project].authors
+# and README.md BibTeX block). Fill arXiv ID + date-released at the same time.
+message: "If you use this software, please cite the accompanying paper."
+title: "TRL-Bench: A Multi-Granular Tabular Representation Learning Benchmark"
+type: software
+authors:
+  - name: "TRL-Bench Authors"
+version: 1.0.0
+date-released: "2026-05-19"
+license: Apache-2.0
+url: "https://github.com/LOGO-CUHKSZ/TRL-Bench"
+preferred-citation:
+  type: article
+  title: "TRL-Bench: A Multi-Granular Tabular Representation Learning Benchmark"
+  authors:
+    - name: "TRL-Bench Authors"
+  year: 2026
+  journal: "arXiv preprint arXiv:TBD"
+  notes: "arXiv ID to be filled in once assigned."

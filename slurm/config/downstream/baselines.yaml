@@ -1,0 +1,70 @@
+# Embedding-free baseline configurations for SLURM job generation
+#
+# Baselines defined here do NOT use model embeddings. They operate directly
+# on raw table data (CSV files) and write their own result JSON files.
+#
+# Each baseline defines:
+#   - description: Human-readable description
+#   - resource_profile: LIGHT (CPU) / MEDIUM / HEAVY — references profiles in tasks.yaml
+#   - tasks: mapping of task_name -> {script, invoke_style, datasets}
+#     - script: Python module path (for invoke_style: module) or script path
+#     - invoke_style: "module" (python -m) or "script" (python <path>)
+#     - datasets: mapping of dataset_name -> {args}
+#       - args: CLI arguments passed to the script
+
+baselines:
+  value_overlap:
+    description: "Value-overlap (containment) baseline — bipartite matching on raw cell values"
+    resource_profile: MEDIUM_CPU
+    tasks:
+      union_search:
+        script: "utils.baselines.value_overlap.union_search"
+        invoke_style: module
+        datasets:
+          santos:
+            args: "--dataset santos --K 10 --threshold 0.0"
+          tus:
+            args: "--dataset tus --K 10 --threshold 0.0"
+          ugen_v1:
+            args: "--dataset ugen_v1 --K 10 --threshold 0.0"
+          ugen_v2:
+            args: "--dataset ugen_v2 --K 10 --threshold 0.0"
+          tus_hard:
+            args: "--dataset tus_hard --K 10 --threshold 0.0"
+      join_search:
+        script: "utils.baselines.value_overlap.join_search"
+        invoke_style: module
+        datasets:
+          opendata_main:
+            args: "--dataset opendata_main --k 50 --k_values 10 20 50"
+            memory: "256G"
+          opendata_can:
+            args: "--dataset opendata_can --k 50 --k_values 10 20 50"
+          opendata_usa:
+            args: "--dataset opendata_usa --k 50 --k_values 10 20 50"
+            memory: "256G"
+          opendata_uk_sg:
+            args: "--dataset opendata_uk_sg --k 50 --k_values 10 20 50"
+
+  jaccard_baseline:
+    description: "Valentine Jaccard baseline — header+value Jaccard similarity for schema matching"
+    resource_profile: LIGHT
+    tasks:
+      schema_matching:
+        script: "utils.baselines.valentine_baselines"
+        invoke_style: module
+        datasets:
+          valentine:
+            time_limit: "03:00:00"
+            args: "--matcher jaccard --pairs data/valentine/pairs.json --ground_truth data/valentine/ground_truth.csv --tables_dir data/valentine/tables --output_dir results/evaluation/schema_matching"
+
+  distribution_baseline:
+    description: "Valentine DistributionBased baseline — value distribution similarity for schema matching"
+    resource_profile: LIGHT
+    tasks:
+      schema_matching:
+        script: "utils.baselines.valentine_baselines"
+        invoke_style: module
+        datasets:
+          valentine:
+            args: "--matcher distribution --pairs data/valentine/pairs.json --ground_truth data/valentine/ground_truth.csv --tables_dir data/valentine/tables --output_dir results/evaluation/schema_matching"

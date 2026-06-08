@@ -1,0 +1,97 @@
+# SLURM resource allocation configuration
+#
+# Resources are determined by dataset size category
+# Model-specific multipliers can override base allocations
+
+# Base resource allocations per size category.
+# Partition names below are placeholders -- set per your cluster (see the
+# YOUR_*_PARTITION values). Time tiers used in this file: SMALL <=12 hr,
+# MEDIUM <=1 day, LARGE <=3 day. Default node profile used for sizing
+# memory/cpus: 4 GPUs, 64 CPUs, 400 GB RAM per node (~16 CPUs, ~100 GB
+# RAM per GPU).
+size_categories:
+  SMALL:
+    time_limit: "08:00:00"      # 8 hours
+    memory: "100G"              # 100 GB RAM (1/4 of node)
+    gpus: "l40s:1"              # Explicit GPU type
+    cpus: 16                    # 16 CPUs (1/4 of node)
+    partition: "YOUR_GPU_PARTITION_SMALL"  # ~12 hour limit
+
+  MEDIUM:
+    time_limit: "23:00:00"      # 23 hours (fits in 1-day partition)
+    memory: "100G"              # 100 GB RAM
+    gpus: "l40s:1"              # Explicit GPU type
+    cpus: 16
+    partition: "YOUR_GPU_PARTITION_MEDIUM"  # ~1 day limit
+
+  LARGE:
+    time_limit: "71:00:00"      # 71 hours (fits in 3-day partition)
+    memory: "100G"              # 100 GB RAM
+    gpus: "l40s:1"              # Explicit GPU type
+    cpus: 16
+    partition: "YOUR_GPU_PARTITION_LARGE"  # ~3 day limit
+
+# Partition for CPU-only jobs (e.g., merge shards)
+# No --gres=gpu is requested, so no GPU is allocated
+cpu_partition: "YOUR_CPU_PARTITION"   # CPU-only partition (<=3hr is sufficient for merge jobs)
+
+# SLURM job settings
+slurm_defaults:
+  account: "YOUR_SLURM_ACCOUNT"  # set to your Slurm allocation account
+  qos: null                      # Quality of service, if applicable
+  constraint: null               # GPU type constraint (e.g., "v100|a100")
+  exclusive: false               # Don't require exclusive node access
+  mail_type: "FAIL,TIME_LIMIT"   # Email on failure or time limit
+  mail_user: null                # Set to receive email notifications
+
+# Retry configuration
+retry:
+  max_retries: 3
+  time_multiplier: 1.5           # Increase time limit on retry
+  memory_multiplier: 1.25        # Increase memory on retry
+
+# Dataset-specific overrides (optional)
+# Uncomment and modify as needed based on observed job performance
+# dataset_overrides:
+#   ecb_join 495G override removed: all models cap rows read (max_rows or NROWS),
+#   so full-file memory is never needed.
+dataset_overrides: {}
+
+# Model-specific memory multipliers
+# Applied on top of base allocation
+model_memory_multipliers:
+  tabert: 1.5                    # TaBERT uses more memory
+  starmie: 1.0
+  tabsketchfm: 1.0
+  tapas: 1.0
+  turl: 2.0                      # TURL needs more memory for large datasets (entity masks)
+  bert: 1.0
+  gte: 1.0
+
+# Paths configuration
+paths:
+  project_root: "."
+  datasets_dir: "data"
+  # Column embedding output path (used by the column embedding pipeline)
+  output_dir: "embeddings/column"
+  logs_dir: "slurm/logs"
+  # Row embedding paths
+  row_output_dir: "embeddings/row"
+  row_checkpoint_dir: "checkpoints/row"
+  # Script directories (relative to project root)
+  scripts_dir: "slurm/scripts/generated"  # Base directory for all generated scripts
+  embeddings_scripts_dir: "slurm/scripts/generated/embeddings"
+  row_scripts_dir: "slurm/scripts/generated/row_embeddings"
+  downstream_scripts_dir: "slurm/scripts/generated/downstream"
+  # Row data (canonical dataset) paths
+  row_data_output_dir: "embeddings/row_prediction"
+  row_data_checkpoint_dir: "checkpoints/row_data"
+  row_data_scripts_dir: "slurm/scripts/generated/row_data_embeddings"
+  row_data_downstream_scripts_dir: "slurm/scripts/generated/row_data_downstream"
+  # Table embedding paths (aggregated from column embeddings)
+  table_output_dir: "embeddings/table"
+  table_scripts_dir: "slurm/scripts/generated/table_embeddings"
+  # PCA compression paths
+  pca_scripts_dir: "slurm/scripts/generated/pca"
+  status_file: "slurm/logs/status/job_status.json"
+  timing_file: "slurm/logs/timing/timing_summary.csv"

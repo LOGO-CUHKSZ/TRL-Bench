@@ -1,0 +1,278 @@
+#!/bin/bash
+#SBATCH --job-name=${JOB_NAME}
+#SBATCH --output=${LOG_DIR}/jobs/${MODEL}_${DATASET}_union_srch_%j.out
+#SBATCH --error=${LOG_DIR}/jobs/${MODEL}_${DATASET}_union_srch_%j.err
+#SBATCH --time=${TIME_LIMIT}
+#SBATCH --mem=${MEMORY}
+#SBATCH --cpus-per-task=${CPUS}
+#SBATCH --partition=${PARTITION}
+${EXTRA_SLURM_DIRECTIVES}
+
+# =============================================================================
+# SLURM Downstream Task: Union Search (Ranking)
+# Model: ${MODEL}
+# Dataset: ${DATASET}
+# Generated: ${TIMESTAMP}
+# =============================================================================
+
+set -euo pipefail
+
+# -----------------------------------------------------------------------------
+# Configuration
+# -----------------------------------------------------------------------------
+PROJECT_ROOT="${PROJECT_ROOT}"
+MODEL="${MODEL}"
+DATASET="${DATASET}"
+TASK="union_search"
+EMBEDDINGS_PATH="${EMBEDDINGS_PATH}"
+GROUNDTRUTH_PATH="${GROUNDTRUTH_PATH}"
+STATUS_FILE="${STATUS_FILE}"
+RESULTS_DIR="${RESULTS_DIR}"
+RESULTS_FILE="${RESULTS_FILE}"
+
+# Hyperparameters
+METHOD="${METHOD}"
+K="${K}"
+THRESHOLD="${THRESHOLD}"
+EF="${EF}"
+N="${N}"
+
+# Job metadata
+SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
+JOB_KEY="${MODEL}_${DATASET}_${TASK}"
+LOG_PREFIX="[${JOB_KEY}]"
+
+# -----------------------------------------------------------------------------
+# Logging Functions
+# -----------------------------------------------------------------------------
+log_info() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} INFO: $*"
+}
+
+log_warn() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} WARN: $*" >&2
+}
+
+log_error() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} ERROR: $*" >&2
+}
+
+# -----------------------------------------------------------------------------
+# Status Update Functions (Atomic JSON updates with file locking)
+# -----------------------------------------------------------------------------
+update_status() {
+    local status="$1"
+    local message="${2:-}"
+    local exit_code="${3:-0}"
+
+    local timestamp
+    timestamp=$(date -Iseconds)
+
+    mkdir -p "$(dirname "${STATUS_FILE}")"
+
+    (
+        flock -w 10 200 || { log_warn "Could not acquire lock for status update"; return 1; }
+
+        if [[ ! -f "${STATUS_FILE}" ]]; then
+            echo '{}' > "${STATUS_FILE}"
+        fi
+
+        python3 << EOF
+import json
+
+status_file = "${STATUS_FILE}"
+job_key = "${JOB_KEY}"
+
+try:
+    with open(status_file, 'r') as f:
+        data = json.load(f)
+except (json.JSONDecodeError, FileNotFoundError):
+    data = {}
+
+data[job_key] = {
+    'status': "${status}",
+    'message': "${message}",
+    'exit_code': ${exit_code},
+    'timestamp': "${timestamp}",
+    'slurm_job_id': "${SLURM_JOB_ID}",
+    'model': "${MODEL}",
+    'dataset': "${DATASET}",
+    'task': "${TASK}",
+    'embeddings': "${EMBEDDINGS_PATH}",
+    'hyperparameters': {
+        'method': "${METHOD}",
+        'k': ${K},
+        'threshold': ${THRESHOLD},
+        'ef': ${EF},
+        'N': ${N},
+    },
+}
+
+with open(status_file, 'w') as f:
+    json.dump(data, f, indent=2)
+EOF
+    ) 200>"${STATUS_FILE}.lock"
+}
+
+# -----------------------------------------------------------------------------
+# Results Extraction Function
+# -----------------------------------------------------------------------------
+extract_metrics() {
+    local output_file="$1"
+
+    mkdir -p "$(dirname "${RESULTS_FILE}")"
+
+    python3 << EOF
+import json
+import re
+
+output_file = "${output_file}"
+results_file = "${RESULTS_FILE}"
+
+metrics = {
+    'model': "${MODEL}",
+    'dataset': "${DATASET}",
+    'task': "${TASK}",
+    'slurm_job_id': "${SLURM_JOB_ID}",
+    'hyperparameters': {
+        'method': "${METHOD}",
+        'k': ${K},
+        'threshold': ${THRESHOLD},
+        'ef': ${EF},
+        'N': ${N},
+    },
+}
+
+try:
+    with open(output_file, 'r') as f:
+        output = f.read()
+
+    # Extract MAP@K, P@K, R@K from run_search.py output
+    match = re.search(r'MAP@\s*\d+\s*=\s*([0-9.]+)', output)
+    if match:
+        metrics['map_at_k'] = float(match.group(1))
+
+    match = re.search(r'P@\s*\d+\s*=\s*([0-9.]+)', output)
+    if match:
+        metrics['precision_at_k'] = float(match.group(1))
+
+    match = re.search(r'R@\s*\d+\s*=\s*([0-9.]+)', output)
+    if match:
+        metrics['recall_at_k'] = float(match.group(1))
+
+    metrics['status'] = 'completed'
+except Exception as e:
+    metrics['status'] = 'error'
+    metrics['error'] = str(e)
+
+with open(results_file, 'w') as f:
+    json.dump(metrics, f, indent=2)
+print(f"Results saved to: {results_file}")
+EOF
+}
+
+# -----------------------------------------------------------------------------
+# Pre-flight Checks
+# -----------------------------------------------------------------------------
+preflight_checks() {
+    log_info "Running pre-flight checks..."
+
+    if [[ ! -f "${EMBEDDINGS_PATH}" ]]; then
+        log_error "Embeddings file not found: ${EMBEDDINGS_PATH}"
+        return 1
+    fi
+    log_info "Embeddings: ${EMBEDDINGS_PATH}"
+
+    if [[ ! -f "${GROUNDTRUTH_PATH}" ]]; then
+        log_error "Ground truth not found: ${GROUNDTRUTH_PATH}"
+        return 1
+    fi
+    log_info "Ground truth: ${GROUNDTRUTH_PATH}"
+
+    log_info "Pre-flight checks passed"
+    return 0
+}
+
+# -----------------------------------------------------------------------------
+# Cleanup Handler
+# -----------------------------------------------------------------------------
+cleanup() {
+    local exit_code=$?
+    local end_time
+    end_time=$(date +%s)
+    local duration=$((end_time - START_TIME))
+
+    if [[ ${exit_code} -eq 0 ]]; then
+        log_info "Job completed successfully in ${duration} seconds"
+        update_status "COMPLETED" "Success" 0
+    else
+        log_error "Job failed with exit code ${exit_code} after ${duration} seconds"
+        update_status "FAILED" "Exit code: ${exit_code}" "${exit_code}"
+    fi
+}
+
+# =============================================================================
+# MAIN EXECUTION
+# =============================================================================
+
+START_TIME=$(date +%s)
+
+trap cleanup EXIT
+
+cd "${PROJECT_ROOT}"
+
+log_info "=========================================="
+log_info "Starting union search evaluation"
+log_info "Model:        ${MODEL}"
+log_info "Dataset:      ${DATASET}"
+log_info "Embeddings:   ${EMBEDDINGS_PATH}"
+log_info "Ground truth: ${GROUNDTRUTH_PATH}"
+log_info "SLURM Job:    ${SLURM_JOB_ID}"
+log_info "Hyperparameters:"
+log_info "  method:       ${METHOD}"
+log_info "  K:            ${K}"
+log_info "  threshold:    ${THRESHOLD}"
+log_info "  ef:           ${EF}"
+log_info "  N:            ${N}"
+log_info "=========================================="
+
+update_status "RUNNING" "Job started"
+
+if ! preflight_checks; then
+    log_error "Pre-flight checks failed"
+    exit 1
+fi
+
+# Setup environment
+log_info "Setting up environment..."
+${ENV_SETUP}
+
+log_info "Python: $(python --version 2>&1)"
+
+# Create temp file for output capture
+OUTPUT_CAPTURE=$(mktemp)
+
+# Run union search and evaluation
+log_info "Starting union search evaluation..."
+
+# Both --query_embeddings and --datalake_embeddings point to the same pkl because
+# query tables are a subset of the datalake; compute_metrics() filters by groundtruth keys.
+python ${SCRIPT_PATH} \
+    --query_embeddings "${EMBEDDINGS_PATH}" \
+    --datalake_embeddings "${EMBEDDINGS_PATH}" \
+    --groundtruth "${GROUNDTRUTH_PATH}" \
+    --method ${METHOD} \
+    --K ${K} \
+    --threshold ${THRESHOLD} \
+    --ef ${EF} \
+    --N ${N} \
+    2>&1 | tee "${OUTPUT_CAPTURE}"
+
+# Extract metrics from output
+log_info "Extracting metrics..."
+extract_metrics "${OUTPUT_CAPTURE}"
+
+# Cleanup temp file
+rm -f "${OUTPUT_CAPTURE}"
+
+log_info "Union search evaluation complete"

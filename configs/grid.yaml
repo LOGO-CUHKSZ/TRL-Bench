@@ -1,0 +1,45 @@
+# Benchmark grid (every valid cell).
+# Resolved into individual sbatch scripts by `python -m slurm.generate_jobs --config configs/grid.yaml`.
+
+seeds: [72, 62, 52, 82, 42]   # paper rounds 1..5
+
+# Each entry is a (task family) × (model set) × (settings) × (probes) tuple.
+# Datasets are determined by slurm/config/downstream/task_datasets.yaml.
+# Models are filtered by their declared granularities in configs/models.yaml.
+
+ctbench:
+  tasks:
+    - column_type_prediction
+    - column_clustering
+    - column_relation_prediction
+    - join_search
+    - schema_matching
+    - union_search
+    - table_subset
+    - table_retrieval
+    - table_fact_verification
+    - semantic_parsing
+  settings: [cls_embedding, column_mean, token_mean]
+  probes:   [linear, mlp]
+
+rbench:
+  tasks:
+    - row_prediction
+    - record_linkage
+  settings: [row_embedding]
+  probes:   [linear, mlp]
+
+dlte:
+  tasks:
+    - dlte_retrieval     # Stage 1
+    - dlte_alignment     # Stage 2
+    - dlte_merge         # Stage 3
+  settings: [stage_default]
+  probes:   [stage_native]
+
+effbench:
+  tasks:
+    - effbench_column
+    - effbench_table
+    - effbench_row
+  # effbench has its own sweep configured in src/trl_bench/effbench/spec.py

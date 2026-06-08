@@ -1,0 +1,25 @@
+python models/starmie/run_pretrain.py \
+  --data_path datasets/santos/datalake \
+  --batch_size 64 \
+  --lr 5e-5 \
+  --lm roberta \
+  --n_epochs 3 \
+  --max_len 128 \
+  --size 550 \
+  --projector 768 \
+  --save_model \
+  --augment_op drop_col \
+  --sample_meth tfidf_entity \
+  --table_order column \
+  --run_id 0
+
+
+python models/starmie/extractVectors.py \
+  --model_path results/datalake/model_drop_col_tfidf_entity_column_0.pt \
+  --query_dir datasets/santos/query \
+  --datalake_dir datasets/santos/datalake \
+  --output_dir datasets/santos/vectors \
+  --augment_op drop_col \
+  --sample_meth tfidf_entity \
+  --table_order column \
+  --run_id 0

@@ -1,0 +1,50 @@
+task_name: column_type_prediction
+task_type: classification
+
+head:
+  type: mlp
+  input_dim: auto
+  output_dim: auto
+  hidden_dim: 256
+  num_layers: 2
+  activation: relu
+  dropout: 0.1
+  dropout_first: false
+
+training:
+  backend: pytorch
+
+  optimizer:
+    type: adamw
+    lr: 1.0e-3
+    weight_decay: 0
+
+  scheduler:
+    type: none
+
+  loss:
+    type: masked_bce
+
+  batch_size: 20
+  max_epochs: 2
+  seed: 42
+  device: auto
+  deterministic: true
+  debug: false
+  eval_test_every_epoch: false
+
+  checkpointing:
+    monitor: val_map
+    mode: max
+    save_per_epoch: true
+
+  logging:
+    wandb: true
+    wandb_project: column-type-prediction
+
+evaluation:
+  # MAP, micro_f1, macro_f1 are computed by CTTaskSpec.compute_metrics()
+  # (custom override), not from METRIC_REGISTRY. Listed here so
+  # validate_monitor_keys() accepts val_map (falls back to train_map at runtime).
+  metrics: [map, micro_f1, macro_f1]
+  threshold: 0.5

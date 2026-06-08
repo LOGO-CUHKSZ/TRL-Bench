@@ -1,0 +1,98 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trl-bench"
+version = "1.0.0"
+description = "TRL-Bench: a multi-granular tabular representation learning benchmark"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [
+    # Placeholder identity. Replace with camera-ready author list before publication;
+    # also update CITATION.cff and README.md BibTeX block to match.
+    { name = "TRL-Bench Authors", email = "trl-bench@logo-lab.example" },
+]
+keywords = ["tabular", "representation-learning", "benchmark", "embeddings"]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    # Base runtime deps — installed automatically by any `pip install -e .[<extra>]`.
+    # Previously lived under the optional `[core]` extra, which made the documented
+    # install line (`.[bert]`) skip them silently. Promoted to PEP 621 dependencies
+    # so the per-model extras (below) compose cleanly with the base.
+    "torch>=2.0",
+    "datasets>=2.14",
+    "scikit-learn>=1.2",
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "tqdm",
+    "pyyaml",
+    "huggingface_hub>=0.19",
+    "omegaconf>=2.3",        # configs/downstream/*.yaml -> run_task.py config loader
+    "pytorch-lightning>=2.0", # utils/downstream/trainer.py LightningDataModule
+]
+
+[project.optional-dependencies]
+bert  = ["transformers>=4.30,<5"]
+gte   = ["transformers>=4.30,<5", "sentence-transformers"]
+tapas = ["transformers>=4.30,<4.50", "sentencepiece"]   # TAPAS tokenizer needs sentencepiece; <4.50 avoids CVE-2025-32434 torch>=2.6 gate (paper-time used 4.49)
+tapex = ["transformers>=4.30,<5", "sentencepiece"]   # TAPEX slow tokenizer not in 5.x
+# Note: transformers 5.x dropped the legacy TAPEX slow-tokenizer conversion path.
+# The <5 caps keep the tested transformers tokenizer API (Killarney used 4.57.6).
+tabert = ["fairseq>=0.10", "torch-scatter", "ujson", "msgpack", "pyzmq", "redis", "h5py"]   # vertical_attention + dataset.py deps (msgpack/pyzmq/redis from vendored zmq cache layer; h5py for vertical-attention checkpoint format)
+turl  = ["transformers>=4.30,<5", "boto3", "sacremoses", "sentencepiece"]   # TURL ships a VENDORED transformers fork (models/turl/code/model/transformers/) used by the extraction path; the only pip-`transformers` imports are in vestigial convert_*.py/run_lm_finetuning.py (not run). Extraction verified at transformers 4.49, so we align with [bert] instead of the old <4.20 pin, which forced an ancient `tokenizers` with no Python-3.12 wheel. boto3: vendored file_utils.py; sacremoses: XLM tokenizer.
+tabicl = ["tabicl"]
+tabpfn = ["tabpfn==6.4.1", "tabpfn-extensions==0.2.2"]   # PIN tested versions: tabpfn 6.4.1 fetches weights from the public GCS bucket (storage.googleapis.com/tabpfn-v2-model-files) with NO token. tabpfn>=8 added a Prior Labs license gate (browser_auth.ensure_license_accepted -> TabPFNLicenseError) that demands TABPFN_TOKEN for non-interactive runs; pinning 6.4.1 keeps the token-free behavior.
+tabsketchfm = ["pytorch-lightning", "chardet"]   # data_prep.py sniffs CSV encodings via chardet
+tuta = []
+tabbie = []
+starmie = ["mlflow"]   # run_pretrain.py imports mlflow for experiment tracking
+transtab = ["transtab"]
+dae = []
+scarf = []
+switchtab = []
+vime = []
+subtab = []
+saint = ["pytorch-lightning"]
+tabular_binning = []
+tabtransformer = []
+openai = ["openai", "tiktoken"]  # OpenAI API ablation (Table 30); needs OPENAI_API_KEY at runtime
+# Downstream search-task deps (not model families): union_search uses munkres
+# (Hungarian assignment) + hnswlib (HNSW); join_search uses hnswlib. faiss for
+# the TabSketchFM join variant comes from the system module, not pip.
+join_search = ["hnswlib"]
+union_search = ["munkres", "hnswlib"]
+semantic_parsing = ["tensorboardX"]  # MAPO decoder runner (sole undeclared dep; full chain audited)
+all = [
+    "trl-bench[bert,gte,tapas,tapex,tabert,turl,tabicl,tabpfn,tabsketchfm,tuta,tabbie,starmie,transtab,dae,scarf,switchtab,vime,subtab,saint,tabular_binning,tabtransformer,openai,join_search,union_search,semantic_parsing]",
+]
+dev = [
+    "pytest>=7", "pytest-cov",
+    # Lightweight task deps that test modules import transitively; without these
+    # bare `pytest tests/` would fail at collection on a fresh `[bert,dev]` install.
+    "hnswlib",      # tasks.join_search.splits + tasks.union_search.*
+    "munkres",      # tasks.union_search.*
+    "tensorboardX", # tasks.semantic_parsing.run_training
+]
+
+[project.scripts]
+trl-bench-run = "trl_bench.run:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+# Collect only the project's own suite; src/ vendors upstream model code that
+# ships its own (non-collectible) test files under models/{turl,starmie,...}/.
+testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+# Redirect pytest's tmp_path / tmp_path_factory away from /tmp (limited space
+# on shared hosts) into the project tree. The directory is gitignored.
+addopts = "--basetemp=.pytest_basetemp"

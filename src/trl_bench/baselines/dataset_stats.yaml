@@ -1,0 +1,12 @@
+join_search:
+  datalake_column_counts:
+    opendata_main: 213857
+    opendata_can: 76065
+    opendata_usa: 102767
+    opendata_uk_sg: 35025
+union_search:
+  datalake_table_counts:
+    santos: 550
+table_retrieval:
+  table_counts:
+    nq_tables: 169885

@@ -1,0 +1,54 @@
+name: release-verify
+
+# Release gate: runs scripts/verify_release.sh on every push + PR to master.
+# Simulates a fresh clone + the documented install + the test suite in a
+# clean environment (no site-local setup). Catches the class of "works on my
+# machine" bugs (broken install commands, missing extras, tests hard-failing
+# without site-local scripts).
+#
+# Layer-2 (fresh-extraction smoke matrix) is NOT in CI -- it needs GPU +
+# Slurm. Maintainers run it periodically via scripts/smoke_matrix.sh.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  layer1:
+    name: Layer-1 fresh-clone verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30   # pip install of transformers + torch can take 5-10 min
+    steps:
+      - name: Free disk space
+        # Ubuntu runners have ~14 GB free on /, and `pip install -e ".[bert]"`
+        # pulls torch + transformers + tokenizers (~5-6 GB) plus the cloned
+        # repo + venv + cache -- we cut too close and hit "No space left on
+        # device" inside the runner agent itself. Remove ~30 GB of preinstalled
+        # tooling we don't need before starting any heavy work.
+        run: |
+          echo "BEFORE:"; df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
+                      /usr/local/share/powershell /usr/share/swift || true
+          sudo apt-get clean
+          echo "AFTER:"; df -h /
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history so verify_release.sh can `git clone --no-local`
+          # from the workdir into a scratch dir.
+          fetch-depth: 0
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Run scripts/verify_release.sh
+        run: |
+          chmod +x scripts/verify_release.sh
+          ./scripts/verify_release.sh HEAD

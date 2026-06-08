@@ -1,0 +1,388 @@
+#!/bin/bash
+#SBATCH --job-name=${JOB_NAME}
+#SBATCH --output=${LOG_DIR}/jobs/${MODEL}_${DATASET}_tabret_%j.out
+#SBATCH --error=${LOG_DIR}/jobs/${MODEL}_${DATASET}_tabret_%j.err
+#SBATCH --time=${TIME_LIMIT}
+#SBATCH --mem=${MEMORY}
+${GPU_DIRECTIVE}
+#SBATCH --cpus-per-task=${CPUS}
+#SBATCH --partition=${PARTITION}
+${EXTRA_SLURM_DIRECTIVES}
+
+# =============================================================================
+# SLURM Downstream Task: Table Retrieval (NQT-style pipeline)
+# Model: ${MODEL}
+# Dataset: ${DATASET}
+# Generated: ${TIMESTAMP}
+# =============================================================================
+
+set -euo pipefail
+
+# -----------------------------------------------------------------------------
+# Configuration
+# -----------------------------------------------------------------------------
+PROJECT_ROOT="${PROJECT_ROOT}"
+MODEL="${MODEL}"
+DATASET="${DATASET}"
+TASK="table_retrieval"
+EMBEDDINGS_PATH="${EMBEDDINGS_PATH}"
+BERT_TABLE_EMBEDDINGS="${BERT_TABLE_EMBEDDINGS}"
+HYBRID_TABLE_EMBEDDINGS="${HYBRID_TABLE_EMBEDDINGS}"
+TRAIN_QUERY_EMBEDDINGS="${TRAIN_QUERY_EMBEDDINGS}"
+DEV_QUERY_EMBEDDINGS="${DEV_QUERY_EMBEDDINGS}"
+TRAIN_QUESTIONS="${TRAIN_QUESTIONS}"
+DEV_QUESTIONS="${DEV_QUESTIONS}"
+TABLES_JSON="${TABLES_JSON}"
+TABLE_ID_MAPPING="${TABLE_ID_MAPPING}"
+CHECKPOINT_DIR="${CHECKPOINT_DIR}"
+STATUS_FILE="${STATUS_FILE}"
+RESULTS_DIR="${RESULTS_DIR}"
+RESULTS_FILE="${RESULTS_FILE}"
+OUTPUT_DIR="${OUTPUT_DIR}"
+
+# Hyperparameters
+EPOCHS="${EPOCHS}"
+BATCH_SIZE="${BATCH_SIZE}"
+LEARNING_RATE="${LEARNING_RATE}"
+PROJECTION_DIM="${PROJECTION_DIM}"
+HIDDEN_DIM="${HIDDEN_DIM}"
+EMBEDDING_VARIANT="${EMBEDDING_VARIANT}"
+BERT_VARIANT="${BERT_VARIANT}"
+NUM_LAYERS="${NUM_LAYERS}"
+ADAPTER_FLAG="${ADAPTER_FLAG}"
+SIMILARITY_FN="${SIMILARITY_FN}"
+TEMPERATURE="${TEMPERATURE}"
+SEED="${SEED}"
+
+# Determine table embeddings path based on retrieval mode
+# RETRIEVAL_MODE is set by the generator:
+#   "model_only" -> use raw model embeddings directly (no hybrid)
+#   "hybrid"     -> combine model + BERT table embeddings via concat
+RETRIEVAL_MODE="${RETRIEVAL_MODE}"
+
+if [[ "${RETRIEVAL_MODE}" == "model_only" ]]; then
+    TABLE_EMBEDDINGS="${EMBEDDINGS_PATH}"
+    USE_HYBRID=false
+else
+    TABLE_EMBEDDINGS="${HYBRID_TABLE_EMBEDDINGS}"
+    USE_HYBRID=true
+fi
+
+# Job metadata
+SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
+JOB_KEY="${MODEL}_${DATASET}_${TASK}${VARIANT_SUFFIX}${QENC_SUFFIX}${MODE_SUFFIX}_seed${SEED}"
+LOG_PREFIX="[${JOB_KEY}]"
+
+# -----------------------------------------------------------------------------
+# Logging Functions
+# -----------------------------------------------------------------------------
+log_info() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} INFO: $*"
+}
+
+log_warn() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} WARN: $*" >&2
+}
+
+log_error() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} ERROR: $*" >&2
+}
+
+# -----------------------------------------------------------------------------
+# Status Update Functions (Atomic JSON updates with file locking)
+# -----------------------------------------------------------------------------
+update_status() {
+    local status="$1"
+    local message="${2:-}"
+    local exit_code="${3:-0}"
+
+    local timestamp
+    timestamp=$(date -Iseconds)
+
+    mkdir -p "$(dirname "${STATUS_FILE}")"
+
+    (
+        flock -w 10 200 || { log_warn "Could not acquire lock for status update"; return 1; }
+
+        if [[ ! -f "${STATUS_FILE}" ]]; then
+            echo '{}' > "${STATUS_FILE}"
+        fi
+
+        python3 << EOF
+import json
+
+status_file = "${STATUS_FILE}"
+job_key = "${JOB_KEY}"
+
+try:
+    with open(status_file, 'r') as f:
+        data = json.load(f)
+except (json.JSONDecodeError, FileNotFoundError):
+    data = {}
+
+data[job_key] = {
+    'status': "${status}",
+    'message': "${message}",
+    'exit_code': ${exit_code},
+    'timestamp': "${timestamp}",
+    'slurm_job_id': "${SLURM_JOB_ID}",
+    'model': "${MODEL}",
+    'dataset': "${DATASET}",
+    'task': "${TASK}",
+    'table_embeddings': "${TABLE_EMBEDDINGS}",
+    'retrieval_mode': "${RETRIEVAL_MODE}",
+    'hyperparameters': {
+        'epochs': ${EPOCHS},
+        'batch_size': ${BATCH_SIZE},
+        'learning_rate': ${LEARNING_RATE},
+        'projection_dim': ${PROJECTION_DIM},
+        'hidden_dim': ${HIDDEN_DIM},
+    },
+}
+
+with open(status_file, 'w') as f:
+    json.dump(data, f, indent=2)
+EOF
+    ) 200>"${STATUS_FILE}.lock"
+}
+
+# -----------------------------------------------------------------------------
+# Results Extraction Function
+# -----------------------------------------------------------------------------
+extract_metrics() {
+    local eval_results="$1"
+
+    mkdir -p "$(dirname "${RESULTS_FILE}")"
+
+    python3 << EOF
+import json
+
+eval_results = "${eval_results}"
+results_file = "${RESULTS_FILE}"
+
+metrics = {
+    'model': "${MODEL}",
+    'dataset': "${DATASET}",
+    'task': "${TASK}",
+    'seed': ${SEED},
+    'slurm_job_id': "${SLURM_JOB_ID}",
+    'retrieval_mode': "${RETRIEVAL_MODE}",
+    'hyperparameters': {
+        'projection_dim': ${PROJECTION_DIM},
+        'hidden_dim': ${HIDDEN_DIM},
+    },
+}
+
+try:
+    with open(eval_results, 'r') as f:
+        eval_data = json.load(f)
+
+    # evaluate.py writes metrics under a "metrics" key
+    eval_metrics = eval_data.get('metrics', {})
+    for key in ['Recall@1', 'Recall@5', 'Recall@10', 'Recall@20', 'Recall@50', 'Recall@100', 'MRR', 'NDCG@10', 'NDCG@20']:
+        if key in eval_metrics:
+            metrics[key] = eval_metrics[key]
+
+    # Also copy top-level metadata
+    for key in ['num_queries', 'num_tables']:
+        if key in eval_data:
+            metrics[key] = eval_data[key]
+
+    metrics['status'] = 'completed'
+except Exception as e:
+    metrics['status'] = 'error'
+    metrics['error'] = str(e)
+
+with open(results_file, 'w') as f:
+    json.dump(metrics, f, indent=2)
+print(f"Results saved to: {results_file}")
+EOF
+}
+
+# -----------------------------------------------------------------------------
+# Pre-flight Checks
+# -----------------------------------------------------------------------------
+preflight_checks() {
+    log_info "Running pre-flight checks..."
+
+    if [[ ! -f "${EMBEDDINGS_PATH}" ]]; then
+        log_error "Table embeddings file not found: ${EMBEDDINGS_PATH}"
+        return 1
+    fi
+    log_info "Table embeddings: ${EMBEDDINGS_PATH}"
+
+    if [[ "${USE_HYBRID}" == true ]]; then
+        if [[ ! -f "${BERT_TABLE_EMBEDDINGS}" ]]; then
+            log_error "BERT table embeddings not found (needed for hybrid): ${BERT_TABLE_EMBEDDINGS}"
+            return 1
+        fi
+        log_info "BERT table embeddings: ${BERT_TABLE_EMBEDDINGS}"
+    fi
+
+    for f in "${TRAIN_QUERY_EMBEDDINGS}" "${DEV_QUERY_EMBEDDINGS}"; do
+        if [[ ! -f "$f" ]]; then
+            log_error "Query embeddings file not found: $f"
+            return 1
+        fi
+    done
+    log_info "Query embeddings: train/dev OK"
+
+    for f in "${TRAIN_QUESTIONS}" "${DEV_QUESTIONS}" "${TABLES_JSON}" "${TABLE_ID_MAPPING}"; do
+        if [[ ! -f "$f" ]]; then
+            log_error "Dataset file not found: $f"
+            return 1
+        fi
+    done
+    log_info "Dataset files: OK"
+
+    log_info "Pre-flight checks passed"
+    return 0
+}
+
+# -----------------------------------------------------------------------------
+
+cleanup() {
+    local exit_code=$?
+    local end_time
+    end_time=$(date +%s)
+    local duration=$((end_time - START_TIME))
+
+    if [[ ${exit_code} -eq 0 ]]; then
+        log_info "Job completed successfully in ${duration} seconds"
+        update_status "COMPLETED" "Success" 0
+    else
+        log_error "Job failed with exit code ${exit_code} after ${duration} seconds"
+        update_status "FAILED" "Exit code: ${exit_code}" "${exit_code}"
+    fi
+}
+
+# =============================================================================
+# MAIN EXECUTION
+# =============================================================================
+
+START_TIME=$(date +%s)
+
+trap cleanup EXIT
+
+cd "${PROJECT_ROOT}"
+
+log_info "=========================================="
+log_info "Starting table retrieval (NQT-style pipeline)"
+log_info "Model:              ${MODEL}"
+log_info "Dataset:            ${DATASET}"
+log_info "Table embeddings:   ${TABLE_EMBEDDINGS}"
+log_info "Hybrid mode:        ${USE_HYBRID}"
+log_info "Query emb train:    ${TRAIN_QUERY_EMBEDDINGS}"
+log_info "Query emb dev:      ${DEV_QUERY_EMBEDDINGS}"
+log_info "SLURM Job:          ${SLURM_JOB_ID}"
+log_info "Hyperparameters:"
+log_info "  epochs:           ${EPOCHS}"
+log_info "  batch_size:       ${BATCH_SIZE}"
+log_info "  learning_rate:    ${LEARNING_RATE}"
+log_info "  projection_dim:   ${PROJECTION_DIM}"
+log_info "  hidden_dim:       ${HIDDEN_DIM}"
+log_info "=========================================="
+
+update_status "RUNNING" "Job started"
+
+if ! preflight_checks; then
+    log_error "Pre-flight checks failed"
+    exit 1
+fi
+
+
+# Setup environment
+log_info "Setting up environment..."
+${ENV_SETUP}
+
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
+
+log_info "Python: $(python --version 2>&1)"
+log_info "PyTorch: $(python -c 'import torch; print(torch.__version__)' 2>/dev/null || echo 'not found')"
+
+# Create output directories
+mkdir -p "${CHECKPOINT_DIR}"
+mkdir -p "${RESULTS_DIR}"
+
+if [[ "${USE_HYBRID}" == true ]]; then
+    log_info "[Step 0] Creating hybrid table embeddings (${MODEL} + BERT)..."
+    log_info "  base_variant=${EMBEDDING_VARIANT}, bert_variant=${BERT_VARIANT}"
+    python -m trl_bench.tasks.table_retrieval.create_hybrid_embeddings \
+        --base_variant "${EMBEDDING_VARIANT}" \
+        --bert_variant "${BERT_VARIANT}" \
+        --base_embeddings "${EMBEDDINGS_PATH}" \
+        --bert_embeddings "${BERT_TABLE_EMBEDDINGS}" \
+        --output_path "${TABLE_EMBEDDINGS}" \
+        --combination_method concat \
+        --table_id_mapping "${TABLE_ID_MAPPING}" \
+        2>&1
+    log_info "  Hybrid embeddings created: ${TABLE_EMBEDDINGS}"
+fi
+
+# Standard mode with refinement_rounds=2:
+#   Round 1: train with in-batch negatives
+#   Round 2: mine hard negatives using trained projection head, then retrain
+# The projection head aligns hybrid tables (1536-dim) and BERT queries
+# (768-dim) into a shared space before FAISS search.
+# Final best_model.pt is copied back to CHECKPOINT_DIR after all rounds.
+log_info "[Step 1/2] Training (refinement_rounds=2)..."
+
+TRAIN_ARGS=()
+if [[ -n "${EMBEDDING_VARIANT}" ]]; then
+    TRAIN_ARGS+=(--embedding_variant "${EMBEDDING_VARIANT}")
+fi
+python -m trl_bench.tasks.table_retrieval.train \
+    --table_embeddings "${TABLE_EMBEDDINGS}" \
+    --table_id_mapping "${TABLE_ID_MAPPING}" \
+    --train_query_embeddings "${TRAIN_QUERY_EMBEDDINGS}" \
+    --train_questions "${TRAIN_QUESTIONS}" \
+    --dev_query_embeddings "${DEV_QUERY_EMBEDDINGS}" \
+    --dev_questions "${DEV_QUESTIONS}" \
+    --output_dir "${CHECKPOINT_DIR}" \
+    --epochs ${EPOCHS} \
+    --batch_size ${BATCH_SIZE} \
+    --learning_rate ${LEARNING_RATE} \
+    --projection_dim ${PROJECTION_DIM} \
+    --hidden_dim ${HIDDEN_DIM} \
+    --num_layers ${NUM_LAYERS} \
+    ${ADAPTER_FLAG} \
+    --similarity_fn ${SIMILARITY_FN} \
+    --temperature ${TEMPERATURE} \
+    --refinement_rounds 2 \
+    --seed ${SEED} \
+    "${TRAIN_ARGS[@]}" \
+    2>&1
+
+BEST_MODEL="${CHECKPOINT_DIR}/best_model.pt"
+if [[ -f "${BEST_MODEL}" ]]; then
+    log_info "[Step 2/2] Evaluating on test set..."
+
+    EVAL_OUTPUT="${RESULTS_DIR}/${MODEL}_${DATASET}_eval.json"
+
+    EVAL_ARGS=()
+    if [[ -n "${EMBEDDING_VARIANT}" ]]; then
+        EVAL_ARGS+=(--embedding_type "${EMBEDDING_VARIANT}")
+    fi
+    python -m trl_bench.tasks.table_retrieval.evaluate \
+        --table_embeddings "${TABLE_EMBEDDINGS}" \
+        --table_id_mapping "${TABLE_ID_MAPPING}" \
+        --query_embeddings "${TEST_QUERY_EMBEDDINGS}" \
+        --questions_path "${TEST_QUESTIONS}" \
+        --projection_head "${BEST_MODEL}" \
+        --output_path "${EVAL_OUTPUT}" \
+        --gpu \
+        "${EVAL_ARGS[@]}" \
+        2>&1
+
+    # Extract metrics from evaluate.py's JSON output
+    if [[ -f "${EVAL_OUTPUT}" ]]; then
+        extract_metrics "${EVAL_OUTPUT}"
+    else
+        log_warn "No evaluation output found at ${EVAL_OUTPUT}"
+    fi
+else
+    log_error "Best model checkpoint not found: ${BEST_MODEL}"
+    exit 1
+fi
+
+log_info "Table retrieval pipeline complete"

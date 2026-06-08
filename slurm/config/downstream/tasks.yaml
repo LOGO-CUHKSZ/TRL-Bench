@@ -1,0 +1,627 @@
+# Downstream task configurations for SLURM job generation
+#
+# Each task defines:
+#   - script: Path to the evaluation/training script
+#   - args: Mapping of logical argument names to CLI flags
+#   - defaults: Default parameter values
+#   - metrics: List of metrics to extract from output
+#   - resource_profile: LIGHT (CPU) or MEDIUM/HEAVY (GPU)
+
+tasks:
+  column_clustering:
+    description: "Column clustering evaluation using Starmie algorithm"
+    script: "src/trl_bench/tasks/column_clustering/evaluate_clustering.py"
+    resource_profile: LIGHT  # CPU-only task
+    args:
+      embeddings: "--embeddings"
+      dataset: "--dataset"
+      k: "--k"
+      target_avg_size: "--target_avg_size"
+      batch_size: "--batch_size"
+      min_coverage: "--min_coverage"
+    defaults:
+      k: 20
+      target_avg_size: 50
+      batch_size: 4096
+      min_coverage: 0.95
+    metrics:
+      - purity
+      - nmi
+      - ari
+      - num_clusters
+      - avg_cluster_size
+      - coverage_pct
+      - expected_columns
+      - matched_columns
+      - missing_tables_count
+      - col_mismatches
+    output_pattern: |
+      Purity:\s+([0-9.]+)
+      NMI:\s+(-?[0-9.]+)
+      ARI:\s+(-?[0-9.]+)
+      Number of clusters:\s+([0-9,]+)
+      Avg cluster size:\s+([0-9.]+)
+
+  column_relation_prediction:
+    description: "Column relation prediction using MLP classifier"
+    script: "src/trl_bench/tasks/column_relation_prediction/csv_relation_pipeline.py"
+    resource_profile: MEDIUM  # GPU required
+    # Exclude tfidf: its embeddings only cover CTA tables, missing the CPA
+    # tables required by relation prediction. Random is kept — it was cloned
+    # from bert which has full CPA coverage, and serves as a negative control.
+    exclude_models: [tfidf]
+    args:
+      embeddings_file: "--embeddings_file"
+      dataset_dir: "--dataset_dir"
+      epochs: "--epochs"
+      batch_size: "--batch_size"
+      lr: "--lr"
+      hidden_dim: "--hidden_dim"
+      output_dir: "--output_dir"
+      head_type: "--head_type"
+    defaults:
+      epochs: 20
+      batch_size: 32
+      lr: 0.001
+      hidden_dim: 256
+      head_type: "mlp"
+    metrics:
+      - micro_f1
+      - macro_f1
+    output_pattern: |
+      test_micro_f1=([0-9.]+)
+      test_macro_f1=([0-9.]+)
+
+  column_type_prediction:
+    description: "Column type prediction using MLP classifier"
+    script: "src/trl_bench/tasks/column_type_prediction/train_ct_mode4.py"
+    resource_profile: MEDIUM  # GPU required
+    args:
+      embeddings: "--embeddings"
+      dataset: "--dataset"
+      num_epochs: "--num_epochs"
+      batch_size: "--batch_size"
+      learning_rate: "--learning_rate"
+      output_dir: "--output_dir"
+      head_type: "--head_type"
+    defaults:
+      num_epochs: 10
+      batch_size: 20
+      learning_rate: 0.001
+      head_type: "mlp"
+    metrics:
+      - best_MAP
+      - final_train_MAP
+      - final_test_MAP
+    output_pattern: |
+      Best test MAP:\s+([0-9.]+)
+      Train MAP:\s+([0-9.]+)
+      Test MAP:\s+([0-9.]+)
+
+  join_search:
+    description: "Join search ranking evaluation using exact cosine column retrieval"
+    script: "src/trl_bench/tasks/join_search/run_search_and_evaluate.py"
+    resource_profile: LIGHT  # CPU-only (exact cosine search)
+    args:
+      query_emb: "--query_emb"
+      datalake_emb: "--datalake_emb"
+      query_list: "--query_list"
+      ground_truth: "--ground_truth"
+      k: "--k"
+      output: "--output"
+    defaults:
+      k: 50
+    metrics:
+      - col_recall_at_10
+      - col_recall_at_50
+      - col_precision_at_10
+      - col_f1_at_10
+      - col_map
+    output_pattern: |
+      COL Recall@10:\s+([0-9.]+)
+      COL Recall@50:\s+([0-9.]+)
+      COL Precision@10:\s+([0-9.]+)
+      COL F1@10:\s+([0-9.]+)
+      COL MAP:\s+([0-9.]+)
+
+  join_search_learned:
+    description: "Learned projection probe for join search using InfoNCE contrastive training"
+    script: "src/trl_bench/tasks/join_search/run_learned_search.py"
+    resource_profile: MEDIUM  # GPU for training
+    args:
+      query_emb: "--query_emb"
+      datalake_emb: "--datalake_emb"
+      query_list: "--query_list"
+      ground_truth: "--ground_truth"
+      split_dir: "--split_dir"
+      output_dir: "--output_dir"
+      num_layers: "--num_layers"
+      batch_size: "--batch_size"
+      max_epochs: "--max_epochs"
+      learning_rate: "--learning_rate"
+      temperature: "--temperature"
+      dropout: "--dropout"
+      k: "--k"
+      seed: "--seed"
+    defaults:
+      num_layers: 1
+      batch_size: 512
+      max_epochs: 10
+      learning_rate: 1e-3
+      temperature: 0.07
+      dropout: 0.1
+      k: 50
+    metrics:
+      - col_recall_at_10
+      - col_recall_at_50
+      - col_precision_at_10
+      - col_f1_at_10
+      - col_map
+    output_pattern: |
+      COL Recall@10:\s+([0-9.]+)
+      COL Recall@50:\s+([0-9.]+)
+      COL Precision@10:\s+([0-9.]+)
+      COL F1@10:\s+([0-9.]+)
+      COL MAP:\s+([0-9.]+)
+
+  join_classification:
+    description: "Join binary classification using table-level embeddings"
+    script: "src/trl_bench/utils/downstream/run_task.py"
+    resource_profile: MEDIUM  # GPU required
+    args:
+      embeddings: "--embeddings"
+      labels: "--labels"
+      task_name: "--task_name"
+      task_type: "--task_type"
+      output_dir: "--output_dir"
+      embedding_type: "--embedding_type"
+      combination_method: "--combination_method"
+      hidden_dim: "--hidden_dim"
+      num_labels: "--num_labels"
+      batch_size: "--batch_size"
+      max_epochs: "--max_epochs"
+      learning_rate: "--learning_rate"
+      dropout_prob: "--dropout_prob"
+      head_type: "--head_type"
+    defaults:
+      task_type: "classification"
+      embedding_type: "column_mean"
+      combination_method: "concat"
+      hidden_dim: 256
+      num_labels: 2
+      batch_size: 32
+      max_epochs: 50
+      learning_rate: 1e-3
+      dropout_prob: 0.1
+      head_type: "mlp"
+    metrics:
+      - test_results_accuracy
+      - test_results_weighted_f1
+      - test_results_macro_f1
+
+  join_containment:
+    description: "Containment estimation using column-level embeddings"
+    script: "src/trl_bench/utils/downstream/run_task.py"
+    resource_profile: HEAVY  # 1.26M label pairs × column-level embeddings need >64G
+    args:
+      embeddings: "--embeddings"
+      labels: "--labels"
+      task_name: "--task_name"
+      task_type: "--task_type"
+      output_dir: "--output_dir"
+      embedding_type: "--embedding_type"
+      combination_method: "--combination_method"
+      hidden_dim: "--hidden_dim"
+      num_labels: "--num_labels"
+      batch_size: "--batch_size"
+      max_epochs: "--max_epochs"
+      learning_rate: "--learning_rate"
+      dropout_prob: "--dropout_prob"
+      head_type: "--head_type"
+    defaults:
+      task_type: "regression"
+      embedding_type: "column"
+      combination_method: "concat"
+      hidden_dim: 256
+      num_labels: 1
+      batch_size: 2048
+      max_epochs: 50
+      learning_rate: 1e-3
+      dropout_prob: 0.1
+      head_type: "mlp"
+    metrics:
+      - test_r2
+      - test_mse
+    output_pattern: |
+      test_r2:\s+([0-9.]+)
+      test_mse:\s+([0-9.]+)
+
+  # table_fact_verification: removed — all models perform near random (~54%),
+  # table embeddings alone don't carry enough signal for statement entailment.
+
+  table_retrieval:
+    description: "Table retrieval from 169K Wikipedia tables using NQT-style pipeline"
+    script: "downstream_tasks.table_retrieval.train"
+    evaluate_script: "downstream_tasks.table_retrieval.evaluate"
+    resource_profile: MEDIUM
+    args:
+      table_embeddings: "--table_embeddings"
+      table_id_mapping: "--table_id_mapping"
+      train_query_embeddings: "--train_query_embeddings"
+      dev_query_embeddings: "--dev_query_embeddings"
+      train_questions: "--train_questions"
+      dev_questions: "--dev_questions"
+      output_dir: "--output_dir"
+      batch_size: "--batch_size"
+      epochs: "--epochs"
+      lr: "--learning_rate"
+      projection_dim: "--projection_dim"
+      hidden_dim: "--hidden_dim"
+    defaults:
+      # Validated via ablation (experiments/table_retrieval_ablation/):
+      # cosine + temp=0.1 + 1-layer + no-adapter = 65.45% R@100
+      # LR-stable: any lr in [5e-4, 2e-3] gives within 0.84% of best
+      batch_size: 512
+      epochs: 60
+      lr: 1e-3
+      projection_dim: 256
+      hidden_dim: 256
+      num_layers: 1
+      no_adapter: true
+      similarity_fn: cosine
+      temperature: 0.1
+    metrics:
+      - Recall@1
+      - Recall@5
+      - Recall@10
+      - Recall@20
+      - Recall@50
+      - Recall@100
+      - MRR
+
+  table_subset:
+    description: "Table subset classification using table-level embeddings"
+    script: "src/trl_bench/utils/downstream/run_task.py"
+    resource_profile: MEDIUM
+    args:
+      embeddings: "--embeddings"
+      labels: "--labels"
+      task_name: "--task_name"
+      task_type: "--task_type"
+      output_dir: "--output_dir"
+      embedding_type: "--embedding_type"
+      combination_method: "--combination_method"
+      hidden_dim: "--hidden_dim"
+      num_labels: "--num_labels"
+      batch_size: "--batch_size"
+      max_epochs: "--max_epochs"
+      learning_rate: "--learning_rate"
+      dropout_prob: "--dropout_prob"
+      head_type: "--head_type"
+    defaults:
+      task_type: "classification"
+      embedding_type: "column_mean"
+      combination_method: "concat"
+      hidden_dim: 256
+      num_labels: 2
+      batch_size: 32
+      max_epochs: 50
+      learning_rate: 1e-3
+      dropout_prob: 0.1
+      head_type: "mlp"
+    metrics:
+      - test_results_accuracy
+      - test_results_weighted_f1
+      - test_results_macro_f1
+
+  union_search:
+    description: "Table union search ranking using bipartite column matching"
+    script: "src/trl_bench/tasks/union_search/run_search.py"
+    resource_profile: LIGHT
+    args:
+      query_embeddings: "--query_embeddings"
+      datalake_embeddings: "--datalake_embeddings"
+      groundtruth: "--groundtruth"
+      method: "--method"
+      K: "--K"
+      threshold: "--threshold"
+      ef: "--ef"
+      N: "--N"
+    defaults:
+      method: "linear"
+      K: 10
+      threshold: 0.7
+      ef: 100
+      N: 100
+    dataset_overrides:
+      tus:
+        method: "hnsw"
+        K: 60
+        threshold: 0.1
+        N: 500
+        resource_profile: MEDIUM_CPU  # CPU-only; needs more time/memory than LIGHT, not GPU
+      tus_hard:
+        method: "hnsw"
+        K: 60
+        threshold: 0.1
+        N: 500
+        resource_profile: MEDIUM_CPU  # CPU-only; needs more time/memory than LIGHT, not GPU
+    metrics:
+      - map_at_k
+      - precision_at_k
+      - recall_at_k
+
+  union_classification:
+    description: "Union binary classification using table-level embeddings"
+    script: "src/trl_bench/utils/downstream/run_task.py"
+    resource_profile: MEDIUM
+    args:
+      embeddings: "--embeddings"
+      labels: "--labels"
+      task_name: "--task_name"
+      task_type: "--task_type"
+      output_dir: "--output_dir"
+      embedding_type: "--embedding_type"
+      combination_method: "--combination_method"
+      hidden_dim: "--hidden_dim"
+      num_labels: "--num_labels"
+      batch_size: "--batch_size"
+      max_epochs: "--max_epochs"
+      learning_rate: "--learning_rate"
+      dropout_prob: "--dropout_prob"
+      head_type: "--head_type"
+    defaults:
+      task_type: "classification"
+      embedding_type: "column_mean"
+      combination_method: "concat"
+      hidden_dim: 256
+      num_labels: 2
+      batch_size: 32
+      max_epochs: 50
+      learning_rate: 1e-3
+      dropout_prob: 0.1
+      head_type: "mlp"
+    metrics:
+      - test_results_accuracy
+      - test_results_weighted_f1
+      - test_results_macro_f1
+
+  union_regression:
+    description: "Union regression estimating dimension differences"
+    script: "src/trl_bench/utils/downstream/run_task.py"
+    resource_profile: MEDIUM
+    args:
+      embeddings: "--embeddings"
+      labels: "--labels"
+      task_name: "--task_name"
+      task_type: "--task_type"
+      output_dir: "--output_dir"
+      embedding_type: "--embedding_type"
+      combination_method: "--combination_method"
+      hidden_dim: "--hidden_dim"
+      num_labels: "--num_labels"
+      batch_size: "--batch_size"
+      max_epochs: "--max_epochs"
+      learning_rate: "--learning_rate"
+      dropout_prob: "--dropout_prob"
+      head_type: "--head_type"
+    defaults:
+      task_type: "regression"
+      embedding_type: "column_mean"
+      combination_method: "concat"
+      hidden_dim: 256
+      num_labels: 1
+      batch_size: 32
+      max_epochs: 50
+      learning_rate: 1e-3
+      dropout_prob: 0.1
+      head_type: "mlp"
+    metrics:
+      - test_r2
+      - test_mse
+
+  record_linkage:
+    description: "Record linkage / entity matching using row-level embeddings"
+    script: "src/trl_bench/tasks/record_linkage/run_record_linkage.py"
+    resource_profile: MEDIUM  # GPU for MLP training
+    args:
+      embeddings: "--embeddings"
+      labels: "--labels"
+      task_name: "--task_name"
+      output_dir: "--output_dir"
+      config: "--config"
+      combination_method: "--combination_method"
+      hidden_dim: "--hidden_dim"
+      num_labels: "--num_labels"
+      batch_size: "--batch_size"
+      max_epochs: "--max_epochs"
+      learning_rate: "--learning_rate"
+      dropout_prob: "--dropout_prob"
+      head_type: "--head_type"
+    defaults:
+      combination_method: "concat"
+      hidden_dim: 256
+      num_labels: 2
+      batch_size: 64
+      max_epochs: 50
+      learning_rate: 1e-3
+      dropout_prob: 0.1
+      head_type: "mlp"
+    metrics:
+      - f1
+      - accuracy
+      - weighted_f1
+      - macro_f1
+      - precision
+      - recall
+
+  schema_matching:
+    description: "Schema matching evaluation using column embedding cosine similarity + bipartite matching"
+    script: "src/trl_bench/tasks/schema_matching/run_schema_matching.py"
+    resource_profile: LIGHT  # CPU-only, deterministic
+    args:
+      embeddings: "--embeddings"
+      pairs: "--pairs"
+      ground_truth: "--ground_truth"
+      tables_dir: "--tables_dir"
+      output_dir: "--output_dir"
+      matching_strategy: "--matching_strategy"
+      threshold: "--threshold"
+    defaults:
+      matching_strategy: "hungarian"
+      threshold: 0.0
+    metrics:
+      - recall_at_gt
+      - gt_coverage
+      - micro_precision
+      - micro_recall
+      - micro_f1
+      - macro_f1
+    output_pattern: |
+      Micro Precision:\s+([0-9.]+)
+      Micro Recall:\s+([0-9.]+)
+      Micro F1:\s+([0-9.]+)
+      Macro F1:\s+([0-9.]+)
+
+  # ── DLTE (Data Lake Table Enrichment) ──────────────────────────
+  # Multi-stage pipeline: retrieval → alignment → merge → evaluation
+  # Stages 1-2 iterate over column models only (7 jobs each)
+  # Stages 3-4 iterate over col×row model combinations (21 jobs each)
+  #
+  # iteration_mode is a DLTE-specific field that drives a separate dispatch
+  # mechanism in generate_downstream_scripts.py (not used by other tasks).
+  # depends_on is informational only — not enforced by the generator or SLURM.
+  # Users must sequence stage submissions manually.
+
+  dlte_retrieval:
+    description: "DLTE Stage 1: FAISS table retrieval"
+    script: "src/trl_bench/tasks/dlte/scripts/step8_faiss_retrieval.py"
+    resource_profile: LIGHT
+    iteration_mode: column_only
+    args:
+      models: "--models"
+      topk: "--topk"
+      output_root: "--output_root"
+      project_root: "--project_root"
+    defaults:
+      topk: "10 50 100"
+    metrics:
+      - recall_any
+      - recall_union
+      - recall_join
+      - mrr_any
+
+  dlte_alignment:
+    description: "DLTE Stage 2: Column alignment + join/union classification"
+    script: "src/trl_bench/tasks/dlte/scripts/step9_column_alignment.py"
+    resource_profile: LIGHT
+    iteration_mode: column_only
+    depends_on: dlte_retrieval
+    args:
+      models: "--models"
+      topk: "--topk"
+      output_root: "--output_root"
+      project_root: "--project_root"
+    defaults:
+      topk: "100"
+    metrics:
+      - relation_acc
+      - key_col_acc
+      - col_align_f1_union
+
+  dlte_merge:
+    description: "DLTE Stage 3: Row matching + merge + evaluation"
+    script: "src/trl_bench/tasks/dlte/scripts/step10_row_matching.py"
+    resource_profile: LIGHT
+    iteration_mode: col_x_row
+    depends_on: dlte_alignment
+    args:
+      col_models: "--col_models"
+      row_models: "--row_models"
+      splits: "--splits"
+      output_root: "--output_root"
+      project_root: "--project_root"
+    defaults:
+      splits: "dev test train"
+    metrics:
+      - cell_f1
+      - parent_row_recall
+      - parent_col_recall
+
+  semantic_parsing:
+    description: "Semantic parsing (WTQ) using MAPO decoder with pre-computed embeddings"
+    script: "downstream_tasks.semantic_parsing.run_training"
+    evaluate_script: "downstream_tasks.semantic_parsing.run_test"
+    resource_profile: HEAVY  # 16 actors + GPU, 20K steps
+    args:
+      column_pkl: "--column-pkl"
+      question_pkls: "--question-pkls"
+      dataset_path: "--dataset-path"
+      output_dir: "--output-dir"
+      config: "--config"
+      seed: "--seed"
+    defaults:
+      seed: 0
+      beam_size: 5
+    metrics:
+      - accuracy
+      - oracle_accuracy
+
+# Resource profiles for SLURM allocation
+resource_profiles:
+  LIGHT:
+    description: "CPU-only tasks (clustering)"
+    time_limit: "02:00:00"
+    memory: "32G"
+    cpus: 8
+    gpus: null  # No GPU
+    partition: "cpubase_bycore_b2"
+
+  MEDIUM_CPU:
+    description: "CPU-only tasks needing more memory/time (value overlap baselines)"
+    time_limit: "12:00:00"
+    memory: "64G"
+    cpus: 8
+    gpus: null  # No GPU
+    partition: "cpubase_bycore_b2"
+
+  MEDIUM:
+    description: "GPU tasks (relation/type prediction)"
+    time_limit: "04:00:00"
+    memory: "64G"
+    cpus: 8
+    gpus: "l40s:1"
+    partition: "YOUR_GPU_PARTITION_SMALL"
+
+  HEAVY:
+    description: "Large-scale GPU tasks (e.g. containment with 1.26M pairs)"
+    time_limit: "12:00:00"
+    memory: "256G"
+    cpus: 16
+    gpus: "l40s:1"
+    partition: "YOUR_GPU_PARTITION_SMALL"
+
+# Default models to evaluate
+default_models:
+  - bert
+  - gte
+  - starmie
+  - tabert
+  - tabsketchfm
+  - tapas
+  - tapex
+  - turl
+  - tuta
+
+# Pattern for discovering embeddings
+embeddings_path_pattern: "embeddings/column/{model}/{dataset}.pkl"
+
+# Results output configuration
+results:
+  base_dir: "results/evaluation"
+  json_pattern: "{task}/{model}_{dataset}.json"
+
+# SLURM defaults (inherited from main resources.yaml)
+slurm_defaults:
+  account: "YOUR_SLURM_ACCOUNT"
+  mail_type: "FAIL,TIME_LIMIT"

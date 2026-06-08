@@ -1,0 +1,438 @@
+#!/bin/bash
+#SBATCH --job-name=${JOB_NAME}
+#SBATCH --output=${LOG_DIR}/jobs/${MODEL}_${DATASET}${SHARD_SUFFIX}_%j.out
+#SBATCH --error=${LOG_DIR}/jobs/${MODEL}_${DATASET}${SHARD_SUFFIX}_%j.err
+#SBATCH --time=${TIME_LIMIT}
+#SBATCH --mem=${MEMORY}
+#SBATCH --gres=gpu:${GPUS}
+#SBATCH --cpus-per-task=${CPUS}
+#SBATCH --partition=${PARTITION}
+${EXTRA_SLURM_DIRECTIVES}
+
+# =============================================================================
+# SLURM Embedding Generation Job
+# Model: ${MODEL}
+# Dataset: ${DATASET}
+# Generated: ${TIMESTAMP}
+# =============================================================================
+
+set -euo pipefail
+
+# -----------------------------------------------------------------------------
+# Configuration
+# -----------------------------------------------------------------------------
+PROJECT_ROOT="${PROJECT_ROOT}"
+MODEL="${MODEL}"
+DATASET="${DATASET}"
+CHECKPOINT="${CHECKPOINT}"
+INPUT_DIR="${INPUT_DIR}"
+OUTPUT_PATH="${OUTPUT_PATH}"
+STATUS_FILE="${STATUS_FILE}"
+TIMING_FILE="${TIMING_FILE}"
+
+# Hyperparameters (for traceability)
+MAX_ROWS="${MAX_ROWS}"
+MAX_ENTITIES="${MAX_ENTITIES}"
+BATCH_SIZE="${BATCH_SIZE}"
+CHECKPOINT_INTERVAL="${CHECKPOINT_INTERVAL}"
+
+# Repair configuration
+REPAIR_ENABLED="${REPAIR_ENABLED}"
+REPAIR_CHUNK_SIZE="${REPAIR_CHUNK_SIZE}"
+REPAIR_MAX_ROWS="${REPAIR_MAX_ROWS}"
+REPAIR_REPORT_DIR="${REPAIR_REPORT_DIR}"
+
+# Pretraining configuration (for models like Starmie that need per-dataset training)
+PRETRAIN_ENABLED="${PRETRAIN_ENABLED}"
+PRETRAIN_SCRIPT="${PRETRAIN_SCRIPT}"
+PRETRAIN_ARGS="${PRETRAIN_ARGS}"
+CHECKPOINT_TYPE="${CHECKPOINT_TYPE}"
+
+# Job metadata
+SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
+SHARD_SUFFIX="${SHARD_SUFFIX}"
+SHARD_TYPE="${SHARD_TYPE}"
+SHARD_INDEX=${SHARD_INDEX}
+NUM_SHARDS=${NUM_SHARDS}
+JOB_KEY="${MODEL}_${DATASET}${SHARD_SUFFIX}"
+LOG_PREFIX="[${JOB_KEY}]"
+
+# -----------------------------------------------------------------------------
+# Logging Functions
+# -----------------------------------------------------------------------------
+log_info() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} INFO: $*"
+}
+
+log_warn() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} WARN: $*" >&2
+}
+
+log_error() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} ERROR: $*" >&2
+}
+
+# -----------------------------------------------------------------------------
+# Status Update Functions (Atomic JSON updates with file locking)
+# -----------------------------------------------------------------------------
+update_status() {
+    local status="$1"
+    local message="${2:-}"
+    local exit_code="${3:-0}"
+
+    local timestamp
+    timestamp=$(date -Iseconds)
+
+    # Create status directory if needed
+    mkdir -p "$(dirname "${STATUS_FILE}")"
+
+    # Use flock for atomic updates
+    (
+        flock -w 10 200 || { log_warn "Could not acquire lock for status update"; return 1; }
+
+        # Initialize status file if it doesn't exist
+        if [[ ! -f "${STATUS_FILE}" ]]; then
+            echo '{}' > "${STATUS_FILE}"
+        fi
+
+        # Update status using Python for reliable JSON handling
+        python3 << EOF
+import json
+import sys
+
+status_file = "${STATUS_FILE}"
+job_key = "${JOB_KEY}"
+status = "${status}"
+message = "${message}"
+exit_code = ${exit_code}
+timestamp = "${timestamp}"
+slurm_job_id = "${SLURM_JOB_ID}"
+repair_enabled = "${REPAIR_ENABLED}"
+repair_chunk_size = "${REPAIR_CHUNK_SIZE}"
+repair_max_rows = "${REPAIR_MAX_ROWS}"
+repair_report_dir = "${REPAIR_REPORT_DIR}"
+
+def _parse_int(value):
+    try:
+        return int(value) if value else None
+    except Exception:
+        return None
+
+repair_chunk_size_val = _parse_int(repair_chunk_size)
+repair_max_rows_val = _parse_int(repair_max_rows)
+
+try:
+    with open(status_file, 'r') as f:
+        data = json.load(f)
+except (json.JSONDecodeError, FileNotFoundError):
+    data = {}
+
+data[job_key] = {
+    'status': status,
+    'message': message,
+    'exit_code': exit_code,
+    'timestamp': timestamp,
+    'slurm_job_id': slurm_job_id,
+    'model': "${MODEL}",
+    'dataset': "${DATASET}",
+    'checkpoint': "${CHECKPOINT}",
+    'input_dir': "${INPUT_DIR}",
+    'output_path': "${OUTPUT_PATH}",
+    'shard_type': "${SHARD_TYPE}",
+    'shard_index': ${SHARD_INDEX},
+    'num_shards': ${NUM_SHARDS},
+    'hyperparameters': {
+        'max_rows': ${MAX_ROWS},
+        'max_entities': ${MAX_ENTITIES},
+        'batch_size': ${BATCH_SIZE},
+        'checkpoint_interval': ${CHECKPOINT_INTERVAL},
+    },
+    'repair': {
+        'enabled': str(repair_enabled).lower() == 'true',
+        'chunk_size': repair_chunk_size_val,
+        'max_rows': repair_max_rows_val,
+        'report_dir': repair_report_dir,
+    },
+}
+
+with open(status_file, 'w') as f:
+    json.dump(data, f, indent=2)
+EOF
+    ) 200>"${STATUS_FILE}.lock"
+}
+
+# -----------------------------------------------------------------------------
+# Timing Functions
+# -----------------------------------------------------------------------------
+record_timing() {
+    local duration="$1"
+    local tables_processed="${2:-0}"
+    local status="${3:-completed}"
+
+    local timestamp
+    timestamp=$(date -Iseconds)
+
+    mkdir -p "$(dirname "${TIMING_FILE}")"
+
+    # Append to timing CSV
+    (
+        flock -w 10 200 || { log_warn "Could not acquire lock for timing"; return 1; }
+
+        # Create header if file doesn't exist
+        if [[ ! -f "${TIMING_FILE}" ]]; then
+            echo "timestamp,model,dataset,slurm_job_id,duration_seconds,tables_processed,status" > "${TIMING_FILE}"
+        fi
+
+        echo "${timestamp},${MODEL},${DATASET},${SLURM_JOB_ID},${duration},${tables_processed},${status}" >> "${TIMING_FILE}"
+    ) 200>"${TIMING_FILE}.lock"
+}
+
+# -----------------------------------------------------------------------------
+# Pre-flight Checks
+# -----------------------------------------------------------------------------
+preflight_checks() {
+    log_info "Running pre-flight checks..."
+
+    # Check input directory
+    if [[ ! -d "${INPUT_DIR}" ]]; then
+        log_error "Input directory does not exist: ${INPUT_DIR}"
+        return 1
+    fi
+
+    # Count CSV files
+    local csv_count
+    csv_count=$(find "${INPUT_DIR}" -maxdepth 1 -name "*.csv" | wc -l)
+    if [[ ${csv_count} -eq 0 ]]; then
+        log_error "No CSV files found in: ${INPUT_DIR}"
+        return 1
+    fi
+    log_info "Found ${csv_count} CSV files in input directory"
+
+    # Check checkpoint (skip for HuggingFace models or if pretraining will create it)
+    if [[ "${CHECKPOINT_TYPE}" == "huggingface" ]] || [[ "${CHECKPOINT}" != */* ]] || [[ "${CHECKPOINT}" == google/* ]]; then
+        # HuggingFace model ID (e.g., bert-base-uncased, google/tapas-base, thenlper/gte-base)
+        log_info "Checkpoint is a HuggingFace model ID: ${CHECKPOINT}"
+    elif [[ "${PRETRAIN_ENABLED}" == "true" ]] && [[ ! -e "${CHECKPOINT}" ]]; then
+        # Checkpoint will be created by pretraining phase
+        log_info "Checkpoint will be created by pretraining phase"
+    elif [[ ! -e "${CHECKPOINT}" ]]; then
+        log_error "Checkpoint not found: ${CHECKPOINT}"
+        return 1
+    fi
+
+    # Check output directory can be created
+    local output_dir
+    output_dir=$(dirname "${OUTPUT_PATH}")
+    if ! mkdir -p "${output_dir}" 2>/dev/null; then
+        log_error "Cannot create output directory: ${output_dir}"
+        return 1
+    fi
+
+    log_info "Pre-flight checks passed"
+    return 0
+}
+
+# -----------------------------------------------------------------------------
+# GPU Verification
+# -----------------------------------------------------------------------------
+verify_gpu() {
+    log_info "Verifying GPU availability..."
+
+    if ! command -v nvidia-smi &> /dev/null; then
+        log_warn "nvidia-smi not found, GPU verification skipped"
+        return 0
+    fi
+
+    if ! nvidia-smi &> /dev/null; then
+        log_error "GPU not accessible"
+        return 1
+    fi
+
+    # Log GPU info
+    local gpu_info
+    gpu_info=$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || echo "Unknown")
+    log_info "GPU: ${gpu_info}"
+
+    # Check CUDA visibility
+    if [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then
+        log_info "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES}"
+    fi
+
+    return 0
+}
+
+# -----------------------------------------------------------------------------
+# Cleanup Handler
+# -----------------------------------------------------------------------------
+cleanup() {
+    local exit_code=$?
+    local end_time
+    end_time=$(date +%s)
+    local duration=$((end_time - START_TIME))
+
+    if [[ ${exit_code} -eq 0 ]]; then
+        log_info "Job completed successfully in ${duration} seconds"
+        update_status "COMPLETED" "Success" 0
+        record_timing "${duration}" "${TABLES_PROCESSED:-0}" "completed"
+    else
+        log_error "Job failed with exit code ${exit_code} after ${duration} seconds"
+        update_status "FAILED" "Exit code: ${exit_code}" "${exit_code}"
+        record_timing "${duration}" "${TABLES_PROCESSED:-0}" "failed"
+    fi
+}
+
+# =============================================================================
+# MAIN EXECUTION
+# =============================================================================
+
+# Set start time
+START_TIME=$(date +%s)
+TABLES_PROCESSED=0
+
+# Set up cleanup trap
+trap cleanup EXIT
+
+# Change to project root
+cd "${PROJECT_ROOT}"
+
+log_info "=========================================="
+log_info "Starting embedding generation"
+log_info "Model:      ${MODEL}"
+log_info "Dataset:    ${DATASET}"
+log_info "Checkpoint: ${CHECKPOINT}"
+log_info "Input:      ${INPUT_DIR}"
+log_info "Output:     ${OUTPUT_PATH}"
+log_info "SLURM Job:  ${SLURM_JOB_ID}"
+log_info "Hyperparameters:"
+log_info "  max_rows:           ${MAX_ROWS}"
+log_info "  max_entities:       ${MAX_ENTITIES}"
+log_info "  batch_size:         ${BATCH_SIZE}"
+log_info "  checkpoint_interval: ${CHECKPOINT_INTERVAL}"
+log_info "Repair:"
+log_info "  enabled:            ${REPAIR_ENABLED}"
+log_info "  chunk_size:         ${REPAIR_CHUNK_SIZE}"
+log_info "  max_rows:           ${REPAIR_MAX_ROWS}"
+log_info "  report_dir:         ${REPAIR_REPORT_DIR}"
+log_info "=========================================="
+
+# Update status to RUNNING
+update_status "RUNNING" "Job started"
+
+# Run pre-flight checks
+if ! preflight_checks; then
+    log_error "Pre-flight checks failed"
+    exit 1
+fi
+
+# Verify GPU
+if ! verify_gpu; then
+    log_error "GPU verification failed"
+    exit 1
+fi
+
+# Setup environment
+log_info "Setting up environment..."
+${ENV_SETUP}
+
+# Log Python and key package versions
+log_info "Python: $(python --version 2>&1)"
+log_info "PyTorch: $(python -c 'import torch; print(torch.__version__)' 2>/dev/null || echo 'not found')"
+
+# Check for existing checkpoint (resume support)
+CHECKPOINT_FILE="${OUTPUT_PATH%.pkl}.checkpoint.pkl"
+if [[ -f "${CHECKPOINT_FILE}" ]]; then
+    log_info "Found checkpoint file, will resume: ${CHECKPOINT_FILE}"
+elif [[ -f "${OUTPUT_PATH}" ]]; then
+    log_info "Found existing output file, will resume: ${OUTPUT_PATH}"
+fi
+
+# -----------------------------------------------------------------------------
+# Optional Pretraining Phase (for models like Starmie)
+# -----------------------------------------------------------------------------
+if [[ "${PRETRAIN_ENABLED}" == "true" ]]; then
+    if [[ -f "${CHECKPOINT}" ]]; then
+        log_info "Checkpoint already exists: ${CHECKPOINT}"
+        log_info "Skipping pretraining phase"
+    else
+        log_info "Checkpoint not found, starting pretraining phase..."
+        mkdir -p "$(dirname "${CHECKPOINT}")"
+
+        python ${PRETRAIN_SCRIPT} \
+            --data_path "${INPUT_DIR}" \
+            --checkpoint_dir "$(dirname "$(dirname "${CHECKPOINT}")")" \
+            ${PRETRAIN_ARGS}
+
+        if [[ -f "${CHECKPOINT}" ]]; then
+            log_info "Pretraining complete. Checkpoint: ${CHECKPOINT}"
+        else
+            log_error "Pretraining failed - checkpoint not created: ${CHECKPOINT}"
+            exit 1
+        fi
+    fi
+fi
+
+# Run the embedding generation script
+log_info "Starting embedding generation..."
+
+python ${SCRIPT_PATH} \
+    ${INPUT_ARG} "${INPUT_DIR}" \
+    ${OUTPUT_ARG} "${OUTPUT_PATH}" \
+    ${CHECKPOINT_ARG} "${CHECKPOINT}" \
+    ${EXTRA_ARGS}
+
+# Get table count from output (for timing records)
+if [[ -f "${OUTPUT_PATH}" ]]; then
+    TABLES_PROCESSED=$(python3 -c "
+import pickle
+try:
+    with open('${OUTPUT_PATH}', 'rb') as f:
+        data = pickle.load(f)
+    print(len(data) if isinstance(data, list) else len(data.keys()))
+except:
+    print(0)
+" 2>/dev/null || echo "0")
+    log_info "Processed ${TABLES_PROCESSED} tables"
+fi
+
+# -----------------------------------------------------------------------------
+# Optional Scan + Repair
+# -----------------------------------------------------------------------------
+if [[ "${REPAIR_ENABLED}" == "true" ]]; then
+    log_info "Scanning embeddings for missing columns..."
+    mkdir -p "${REPAIR_REPORT_DIR}"
+    SCAN_REPORT="${REPAIR_REPORT_DIR}/${MODEL}_${DATASET}${SHARD_SUFFIX}.scan.jsonl"
+    REPAIR_REPORT="${REPAIR_REPORT_DIR}/${MODEL}_${DATASET}${SHARD_SUFFIX}.repair.json"
+
+    REPAIR_MAX_ROWS_ARG=""
+    if [[ -n "${REPAIR_MAX_ROWS}" ]]; then
+        REPAIR_MAX_ROWS_ARG="--max_rows ${REPAIR_MAX_ROWS}"
+    fi
+
+    python -m trl_bench.utils.embedding_repair.cli \
+        --model "${MODEL}" \
+        --dataset "${DATASET}" \
+        --action scan \
+        --embeddings "${OUTPUT_PATH}" \
+        --checkpoint "${CHECKPOINT}" \
+        --report "${SCAN_REPORT}" \
+        ${REPAIR_MAX_ROWS_ARG}
+
+    if [[ -s "${SCAN_REPORT}" ]]; then
+        log_warn "Missing columns detected; running repair..."
+        update_status "RUNNING" "Repairing missing columns"
+        python -m trl_bench.utils.embedding_repair.cli \
+            --model "${MODEL}" \
+            --dataset "${DATASET}" \
+            --action repair \
+            --embeddings "${OUTPUT_PATH}" \
+            --checkpoint "${CHECKPOINT}" \
+            --report "${REPAIR_REPORT}" \
+            --chunk_size "${REPAIR_CHUNK_SIZE}" \
+            ${REPAIR_MAX_ROWS_ARG}
+        log_info "Repair complete"
+    else
+        log_info "No missing columns detected; repair skipped"
+    fi
+fi
+
+log_info "Embedding generation complete"

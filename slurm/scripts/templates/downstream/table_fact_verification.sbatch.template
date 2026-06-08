@@ -1,0 +1,347 @@
+#!/bin/bash
+#SBATCH --job-name=${JOB_NAME}
+#SBATCH --output=${LOG_DIR}/jobs/${MODEL}_${DATASET}_tabfact_%j.out
+#SBATCH --error=${LOG_DIR}/jobs/${MODEL}_${DATASET}_tabfact_%j.err
+#SBATCH --time=${TIME_LIMIT}
+#SBATCH --mem=${MEMORY}
+${GPU_DIRECTIVE}
+#SBATCH --cpus-per-task=${CPUS}
+#SBATCH --partition=${PARTITION}
+${EXTRA_SLURM_DIRECTIVES}
+
+# =============================================================================
+# SLURM Downstream Task: Table Fact Verification
+# Model: ${MODEL}
+# Dataset: ${DATASET}
+# Generated: ${TIMESTAMP}
+# =============================================================================
+
+set -euo pipefail
+
+# -----------------------------------------------------------------------------
+# Configuration
+# -----------------------------------------------------------------------------
+PROJECT_ROOT="${PROJECT_ROOT}"
+MODEL="${MODEL}"
+DATASET="${DATASET}"
+TASK="table_fact_verification"
+TABLE_EMBEDDINGS_PATH="${TABLE_EMBEDDINGS_PATH}"
+TRAIN_STATEMENT_EMBEDDINGS="${TRAIN_STATEMENT_EMBEDDINGS}"
+VAL_STATEMENT_EMBEDDINGS="${VAL_STATEMENT_EMBEDDINGS}"
+TEST_STATEMENT_EMBEDDINGS="${TEST_STATEMENT_EMBEDDINGS}"
+TRAIN_LABELS_JSON="${TRAIN_LABELS_JSON}"
+VAL_LABELS_JSON="${VAL_LABELS_JSON}"
+TEST_LABELS_JSON="${TEST_LABELS_JSON}"
+STATUS_FILE="${STATUS_FILE}"
+RESULTS_DIR="${RESULTS_DIR}"
+RESULTS_FILE="${RESULTS_FILE}"
+OUTPUT_DIR="${OUTPUT_DIR}"
+
+# Hyperparameters
+MODEL_TYPE="${MODEL_TYPE}"
+TABLE_EMBEDDING_VARIANT="${TABLE_EMBEDDING_VARIANT}"
+HIDDEN_DIM="${HIDDEN_DIM}"
+DROPOUT="${DROPOUT}"
+EPOCHS="${EPOCHS}"
+BATCH_SIZE="${BATCH_SIZE}"
+LR="${LR}"
+COMBINE_METHOD="${COMBINE_METHOD}"
+SEED="${SEED}"
+STATEMENT_ONLY="${STATEMENT_ONLY}"
+
+# Job metadata
+SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
+JOB_KEY="${MODEL}_${DATASET}_${TASK}${VARIANT_SUFFIX}_seed${SEED}${HEAD_SUFFIX}"
+LOG_PREFIX="[${JOB_KEY}]"
+
+# -----------------------------------------------------------------------------
+# Logging Functions
+# -----------------------------------------------------------------------------
+log_info() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} INFO: $*"
+}
+
+log_warn() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} WARN: $*" >&2
+}
+
+log_error() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} ERROR: $*" >&2
+}
+
+# -----------------------------------------------------------------------------
+# Status Update Functions (Atomic JSON updates with file locking)
+# -----------------------------------------------------------------------------
+update_status() {
+    local status="$1"
+    local message="${2:-}"
+    local exit_code="${3:-0}"
+
+    local timestamp
+    timestamp=$(date -Iseconds)
+
+    mkdir -p "$(dirname "${STATUS_FILE}")"
+
+    (
+        flock -w 10 200 || { log_warn "Could not acquire lock for status update"; return 1; }
+
+        if [[ ! -f "${STATUS_FILE}" ]]; then
+            echo '{}' > "${STATUS_FILE}"
+        fi
+
+        python3 << EOF
+import json
+
+status_file = "${STATUS_FILE}"
+job_key = "${JOB_KEY}"
+
+try:
+    with open(status_file, 'r') as f:
+        data = json.load(f)
+except (json.JSONDecodeError, FileNotFoundError):
+    data = {}
+
+data[job_key] = {
+    'status': "${status}",
+    'message': "${message}",
+    'exit_code': ${exit_code},
+    'timestamp': "${timestamp}",
+    'slurm_job_id': "${SLURM_JOB_ID}",
+    'model': "${MODEL}",
+    'dataset': "${DATASET}",
+    'task': "${TASK}",
+    'table_embeddings': "${TABLE_EMBEDDINGS_PATH}",
+    'statement_only': "${STATEMENT_ONLY}" == "true",
+    'hyperparameters': {
+        'model_type': "${MODEL_TYPE}",
+        'table_embedding_variant': "${TABLE_EMBEDDING_VARIANT}",
+        'hidden_dim': ${HIDDEN_DIM},
+        'dropout': ${DROPOUT},
+        'epochs': ${EPOCHS},
+        'batch_size': ${BATCH_SIZE},
+        'lr': ${LR},
+        'combine_method': "${COMBINE_METHOD}",
+    },
+}
+
+with open(status_file, 'w') as f:
+    json.dump(data, f, indent=2)
+EOF
+    ) 200>"${STATUS_FILE}.lock"
+}
+
+# -----------------------------------------------------------------------------
+# Results Extraction Function
+# -----------------------------------------------------------------------------
+extract_metrics() {
+    local eval_results="$1"
+
+    mkdir -p "$(dirname "${RESULTS_FILE}")"
+
+    python3 << EOF
+import json
+
+eval_results = "${eval_results}"
+results_file = "${RESULTS_FILE}"
+
+metrics = {
+    'model': "${MODEL}",
+    'dataset': "${DATASET}",
+    'task': "${TASK}",
+    'seed': ${SEED},
+    'head_type': "${HEAD_TYPE}",
+    'slurm_job_id': "${SLURM_JOB_ID}",
+    'statement_only': "${STATEMENT_ONLY}" == "true",
+    'hyperparameters': {
+        'model_type': "${MODEL_TYPE}",
+        'table_embedding_variant': "${TABLE_EMBEDDING_VARIANT}",
+        'hidden_dim': ${HIDDEN_DIM},
+        'epochs': ${EPOCHS},
+        'lr': ${LR},
+        'combine_method': "${COMBINE_METHOD}",
+    },
+}
+
+try:
+    with open(eval_results, 'r') as f:
+        eval_data = json.load(f)
+
+    # evaluate.py writes these keys directly
+    for key in ['accuracy', 'f1_macro', 'f1_weighted', 'precision_macro',
+                'recall_macro', 'auroc', 'f1_per_class', 'confusion_matrix',
+                'num_test_examples']:
+        if key in eval_data:
+            metrics[key] = eval_data[key]
+
+    metrics['status'] = 'completed'
+except Exception as e:
+    metrics['status'] = 'error'
+    metrics['error'] = str(e)
+
+with open(results_file, 'w') as f:
+    json.dump(metrics, f, indent=2)
+print(f"Results saved to: {results_file}")
+EOF
+}
+
+# -----------------------------------------------------------------------------
+# Pre-flight Checks
+# -----------------------------------------------------------------------------
+preflight_checks() {
+    log_info "Running pre-flight checks..."
+
+    if [[ ! -f "${TABLE_EMBEDDINGS_PATH}" ]]; then
+        log_error "Table embeddings file not found: ${TABLE_EMBEDDINGS_PATH}"
+        return 1
+    fi
+    log_info "Table embeddings: ${TABLE_EMBEDDINGS_PATH}"
+
+    for f in "${TRAIN_STATEMENT_EMBEDDINGS}" "${VAL_STATEMENT_EMBEDDINGS}" "${TEST_STATEMENT_EMBEDDINGS}"; do
+        if [[ ! -f "$f" ]]; then
+            log_error "Statement embeddings file not found: $f"
+            return 1
+        fi
+    done
+    log_info "Statement embeddings: train/val/test OK"
+
+    for f in "${TRAIN_LABELS_JSON}" "${VAL_LABELS_JSON}" "${TEST_LABELS_JSON}"; do
+        if [[ ! -f "$f" ]]; then
+            log_error "Labels JSON file not found: $f"
+            return 1
+        fi
+    done
+    log_info "Labels JSON: train/val/test OK"
+
+    log_info "Pre-flight checks passed"
+    return 0
+}
+
+# -----------------------------------------------------------------------------
+
+cleanup() {
+    local exit_code=$?
+    local end_time
+    end_time=$(date +%s)
+    local duration=$((end_time - START_TIME))
+
+    if [[ ${exit_code} -eq 0 ]]; then
+        log_info "Job completed successfully in ${duration} seconds"
+        update_status "COMPLETED" "Success" 0
+    else
+        log_error "Job failed with exit code ${exit_code} after ${duration} seconds"
+        update_status "FAILED" "Exit code: ${exit_code}" "${exit_code}"
+    fi
+}
+
+# =============================================================================
+# MAIN EXECUTION
+# =============================================================================
+
+START_TIME=$(date +%s)
+
+trap cleanup EXIT
+
+cd "${PROJECT_ROOT}"
+
+log_info "=========================================="
+log_info "Starting table fact verification"
+log_info "Model:              ${MODEL}"
+log_info "Dataset:            ${DATASET}"
+log_info "Table embeddings:   ${TABLE_EMBEDDINGS_PATH}"
+log_info "Train statements:   ${TRAIN_STATEMENT_EMBEDDINGS}"
+log_info "Val statements:     ${VAL_STATEMENT_EMBEDDINGS}"
+log_info "Test statements:    ${TEST_STATEMENT_EMBEDDINGS}"
+log_info "SLURM Job:          ${SLURM_JOB_ID}"
+log_info "Hyperparameters:"
+log_info "  model_type:              ${MODEL_TYPE}"
+log_info "  table_embedding_variant: ${TABLE_EMBEDDING_VARIANT}"
+log_info "  hidden_dim:              ${HIDDEN_DIM}"
+log_info "  epochs:                  ${EPOCHS}"
+log_info "  lr:                      ${LR}"
+log_info "  combine_method:          ${COMBINE_METHOD}"
+log_info "  statement_only:          ${STATEMENT_ONLY}"
+log_info "=========================================="
+
+update_status "RUNNING" "Job started"
+
+if ! preflight_checks; then
+    log_error "Pre-flight checks failed"
+    exit 1
+fi
+
+
+# Setup environment
+log_info "Setting up environment..."
+${ENV_SETUP}
+
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
+
+log_info "Python: $(python --version 2>&1)"
+log_info "PyTorch: $(python -c 'import torch; print(torch.__version__)' 2>/dev/null || echo 'not found')"
+
+# Create output directory
+mkdir -p "${OUTPUT_DIR}"
+
+# Run training
+log_info "Starting training..."
+
+python ${SCRIPT_PATH} \
+    --table_embeddings "${TABLE_EMBEDDINGS_PATH}" \
+    --statement_embeddings "${TRAIN_STATEMENT_EMBEDDINGS}" \
+    --labels_json "${TRAIN_LABELS_JSON}" \
+    --val_statement_embeddings "${VAL_STATEMENT_EMBEDDINGS}" \
+    --val_labels_json "${VAL_LABELS_JSON}" \
+    --table_embedding_variant "${TABLE_EMBEDDING_VARIANT}" \
+    --combine_method "${COMBINE_METHOD}" \
+    --output_dir "${OUTPUT_DIR}" \
+    --model_type "${MODEL_TYPE}" \
+    --hidden_dim ${HIDDEN_DIM} \
+    --dropout ${DROPOUT} \
+    --epochs ${EPOCHS} \
+    --batch_size ${BATCH_SIZE} \
+    --lr ${LR} \
+    --seed ${SEED} \
+    --head_type ${HEAD_TYPE} \
+    $([ "${STATEMENT_ONLY}" = "true" ] && echo "--statement_only") \
+    --device cuda \
+    2>&1
+
+# Run evaluation on test set (skip for linear/dummy probe — results already written by train.py)
+if [[ "${HEAD_TYPE}" == "linear" || "${HEAD_TYPE}" == "dummy" ]]; then
+    log_info "${HEAD_TYPE} probe: skipping evaluate.py (results written by train.py)"
+    TASK_RESULTS="${OUTPUT_DIR}/results.json"
+    if [[ -f "${TASK_RESULTS}" ]]; then
+        log_info "${HEAD_TYPE} probe results found at: ${TASK_RESULTS}"
+    else
+        log_warn "No results.json found at ${TASK_RESULTS}"
+    fi
+else
+    BEST_CHECKPOINT="${OUTPUT_DIR}/best_model.pt"
+    if [[ -f "${BEST_CHECKPOINT}" ]]; then
+        log_info "Starting evaluation on test set..."
+
+        python ${EVALUATE_SCRIPT_PATH} \
+            --model_checkpoint "${BEST_CHECKPOINT}" \
+            --table_embeddings "${TABLE_EMBEDDINGS_PATH}" \
+            --statement_embeddings "${TEST_STATEMENT_EMBEDDINGS}" \
+            --labels_json "${TEST_LABELS_JSON}" \
+            --table_embedding_variant "${TABLE_EMBEDDING_VARIANT}" \
+            --combine_method "${COMBINE_METHOD}" \
+            $([ "${STATEMENT_ONLY}" = "true" ] && echo "--statement_only") \
+            --output_file "${RESULTS_FILE}" \
+            --device cuda \
+            2>&1
+
+        # Extract metrics
+        if [[ -f "${RESULTS_FILE}" ]]; then
+            log_info "Evaluation results saved to: ${RESULTS_FILE}"
+        else
+            log_warn "No results file found at ${RESULTS_FILE}"
+        fi
+    else
+        log_error "Best model checkpoint not found: ${BEST_CHECKPOINT}"
+        exit 1
+    fi
+fi
+
+log_info "Table fact verification complete"

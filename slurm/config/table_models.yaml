@@ -1,0 +1,133 @@
+# Native table embedding model configurations for SLURM generation
+#
+# Native table embedding models generate table embeddings directly from CSVs,
+# bypassing the column→table derivation pipeline.
+#
+# Each model defines:
+#   - script: Path to the directory-mode table embedding generation script
+#   - model_type: "pretrained" (no training needed)
+#   - checkpoint: Path to model checkpoint (relative to project root)
+#   - env_setup: Shell command to setup environment
+#   - args: Mapping of logical argument names to CLI flags
+#   - defaults: Default parameter values
+#
+# Output: embeddings/table/{model}/{dataset}.pkl
+
+models:
+  tuta:
+    script: "src/trl_bench/models/tuta/generate_table_embeddings_native.py"
+    model_type: pretrained
+    checkpoint: "checkpoints/tuta/tuta.bin"
+    env_setup: "source load_env"
+    args:
+      input_dir: "--input_dir"
+      output_path: "--output_path"
+      model_path: "--model_path"
+      model_type: "--model_type"
+      device_id: "--device_id"
+      checkpoint_interval: "--checkpoint_interval"
+    defaults:
+      model_type: "tuta"
+      checkpoint_interval: 50
+    shard_overrides:
+      nq_tables: 20
+
+  tapex:
+    script: "src/trl_bench/models/tapex/generate_table_embeddings.py"
+    model_type: pretrained
+    checkpoint: "microsoft/tapex-base"
+    checkpoint_type: "huggingface"
+    env_setup: "source load_env"
+    args:
+      input_dir: "--input_dir"
+      output_path: "--output_path"
+      model: "--model"
+      max_rows: "--max_rows"
+      max_length: "--max_length"
+      checkpoint_interval: "--checkpoint_interval"
+    defaults:
+      model: "microsoft/tapex-base"
+      max_rows: 100
+      max_length: 1024
+      checkpoint_interval: 50
+    shard_overrides:
+      nq_tables: 20
+
+  # ── Query-encoder bridge models ──────────────────────────────────
+  # These generate table embeddings for the symmetric hybrid protocol:
+  # each query encoder needs matching table embeddings for the hybrid
+  # concatenation (instead of always using BERT table embeddings).
+  # Uses a generic text encoder script with model-specific pooling.
+
+  sentence_t5:
+    script: "src/trl_bench/utils/generate_table_embeddings_text_encoder.py"
+    model_type: pretrained
+    checkpoint: "sentence-transformers/sentence-t5-base"
+    checkpoint_type: "huggingface"
+    env_setup: "source load_env"
+    args:
+      input_dir: "--input_dir"
+      output_path: "--output_path"
+      model: "--model"
+      pooling: "--pooling"
+      max_rows: "--max_rows"
+      max_length: "--max_length"
+      checkpoint_interval: "--checkpoint_interval"
+    defaults:
+      model: "sentence-transformers/sentence-t5-base"
+      pooling: "mean"
+      max_rows: 100
+      max_length: 512
+      checkpoint_interval: 50
+    shard_overrides:
+      nq_tables: 20
+
+  mpnet:
+    script: "src/trl_bench/utils/generate_table_embeddings_text_encoder.py"
+    model_type: pretrained
+    checkpoint: "sentence-transformers/all-mpnet-base-v2"
+    checkpoint_type: "huggingface"
+    env_setup: "source load_env"
+    args:
+      input_dir: "--input_dir"
+      output_path: "--output_path"
+      model: "--model"
+      pooling: "--pooling"
+      max_rows: "--max_rows"
+      max_length: "--max_length"
+      checkpoint_interval: "--checkpoint_interval"
+    defaults:
+      model: "sentence-transformers/all-mpnet-base-v2"
+      pooling: "mean"
+      max_rows: 100
+      max_length: 512
+      checkpoint_interval: 50
+    shard_overrides:
+      nq_tables: 20
+
+  # ── OpenAI text-embedding-3-small (paper Table 30 ablation) ──────
+  # API-based encoder; uses its own column embedding script (not the
+  # generic text encoder utility). Default dimensions=768 to match GTE-base.
+
+  openai:
+    script: "src/trl_bench/models/openai/generate_column_embeddings.py"
+    model_type: pretrained
+    checkpoint: "text-embedding-3-small"
+    env_setup: "source load_env"
+    args:
+      input: "--input"
+      output: "--output"
+      model: "--model"
+      dimensions: "--dimensions"
+      max_rows: "--max_rows"
+      workers: "--workers"
+      checkpoint_interval: "--checkpoint_interval"
+    defaults:
+      model: "text-embedding-3-small"
+      dimensions: 768
+      max_rows: 100
+      workers: 8
+      checkpoint_interval: 50
+    shard_overrides:
+      nq_tables: 20
+

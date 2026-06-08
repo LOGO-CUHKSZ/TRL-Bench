@@ -1,0 +1,301 @@
+#!/bin/bash
+#SBATCH --job-name=${JOB_NAME}
+#SBATCH --output=${LOG_DIR}/jobs/${MODEL}_${DATASET}_union_reg_%j.out
+#SBATCH --error=${LOG_DIR}/jobs/${MODEL}_${DATASET}_union_reg_%j.err
+#SBATCH --time=${TIME_LIMIT}
+#SBATCH --mem=${MEMORY}
+${GPU_DIRECTIVE}
+#SBATCH --cpus-per-task=${CPUS}
+#SBATCH --partition=${PARTITION}
+${EXTRA_SLURM_DIRECTIVES}
+
+# =============================================================================
+# SLURM Downstream Task: Union Regression
+# Model: ${MODEL}
+# Dataset: ${DATASET}
+# Generated: ${TIMESTAMP}
+# =============================================================================
+
+set -euo pipefail
+
+# -----------------------------------------------------------------------------
+# Configuration
+# -----------------------------------------------------------------------------
+PROJECT_ROOT="${PROJECT_ROOT}"
+MODEL="${MODEL}"
+DATASET="${DATASET}"
+TASK="union_regression"
+EMBEDDINGS_PATH="${EMBEDDINGS_PATH}"
+LABELS_PATH="${LABELS_PATH}"
+STATUS_FILE="${STATUS_FILE}"
+RESULTS_DIR="${RESULTS_DIR}"
+RESULTS_FILE="${RESULTS_FILE}"
+OUTPUT_DIR="${OUTPUT_DIR}"
+
+# Hyperparameters
+TASK_TYPE="${TASK_TYPE}"
+EMBEDDING_TYPE="${EMBEDDING_TYPE}"
+COMBINATION_METHOD="${COMBINATION_METHOD}"
+HIDDEN_DIM="${HIDDEN_DIM}"
+NUM_LABELS="${NUM_LABELS}"
+BATCH_SIZE="${BATCH_SIZE}"
+MAX_EPOCHS="${MAX_EPOCHS}"
+LEARNING_RATE="${LEARNING_RATE}"
+DROPOUT_PROB="${DROPOUT_PROB}"
+SEED="${SEED}"
+
+# Job metadata
+SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
+JOB_KEY="${MODEL}_${DATASET}_${TASK}${VARIANT_SUFFIX}_seed${SEED}${HEAD_SUFFIX}"
+LOG_PREFIX="[${JOB_KEY}]"
+
+# -----------------------------------------------------------------------------
+# Logging Functions
+# -----------------------------------------------------------------------------
+log_info() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} INFO: $*"
+}
+
+log_warn() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} WARN: $*" >&2
+}
+
+log_error() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} ERROR: $*" >&2
+}
+
+# -----------------------------------------------------------------------------
+# Status Update Functions (Atomic JSON updates with file locking)
+# -----------------------------------------------------------------------------
+update_status() {
+    local status="$1"
+    local message="${2:-}"
+    local exit_code="${3:-0}"
+
+    local timestamp
+    timestamp=$(date -Iseconds)
+
+    mkdir -p "$(dirname "${STATUS_FILE}")"
+
+    (
+        flock -w 10 200 || { log_warn "Could not acquire lock for status update"; return 1; }
+
+        if [[ ! -f "${STATUS_FILE}" ]]; then
+            echo '{}' > "${STATUS_FILE}"
+        fi
+
+        python3 << EOF
+import json
+
+status_file = "${STATUS_FILE}"
+job_key = "${JOB_KEY}"
+
+try:
+    with open(status_file, 'r') as f:
+        data = json.load(f)
+except (json.JSONDecodeError, FileNotFoundError):
+    data = {}
+
+data[job_key] = {
+    'status': "${status}",
+    'message': "${message}",
+    'exit_code': ${exit_code},
+    'timestamp': "${timestamp}",
+    'slurm_job_id': "${SLURM_JOB_ID}",
+    'model': "${MODEL}",
+    'dataset': "${DATASET}",
+    'task': "${TASK}",
+    'embeddings': "${EMBEDDINGS_PATH}",
+    'hyperparameters': {
+        'task_type': "${TASK_TYPE}",
+        'embedding_type': "${EMBEDDING_TYPE}",
+        'combination_method': "${COMBINATION_METHOD}",
+        'hidden_dim': ${HIDDEN_DIM},
+        'num_labels': ${NUM_LABELS},
+        'batch_size': ${BATCH_SIZE},
+        'max_epochs': ${MAX_EPOCHS},
+        'learning_rate': ${LEARNING_RATE},
+        'dropout_prob': ${DROPOUT_PROB},
+    },
+}
+
+with open(status_file, 'w') as f:
+    json.dump(data, f, indent=2)
+EOF
+    ) 200>"${STATUS_FILE}.lock"
+}
+
+# -----------------------------------------------------------------------------
+# Results Extraction Function
+# -----------------------------------------------------------------------------
+extract_metrics() {
+    local results_json="$1"
+
+    mkdir -p "$(dirname "${RESULTS_FILE}")"
+
+    python3 << EOF
+import json
+
+results_json = "${results_json}"
+results_file = "${RESULTS_FILE}"
+
+metrics = {
+    'model': "${MODEL}",
+    'dataset': "${DATASET}",
+    'task': "${TASK}",
+    'seed': ${SEED},
+    'head_type': "${HEAD_TYPE}",
+    'slurm_job_id': "${SLURM_JOB_ID}",
+    'hyperparameters': {
+        'task_type': "${TASK_TYPE}",
+        'embedding_type': "${EMBEDDING_TYPE}",
+        'combination_method': "${COMBINATION_METHOD}",
+        'hidden_dim': ${HIDDEN_DIM},
+        'max_epochs': ${MAX_EPOCHS},
+        'learning_rate': ${LEARNING_RATE},
+    },
+}
+
+try:
+    with open(results_json, 'r') as f:
+        task_results = json.load(f)
+
+    # Write flat test_results_* keys that aggregate_results.py expects
+    # Strip 'test_' prefix from inner keys — Trainer returns test_accuracy
+    # but TASK_METRICS expects test_results_accuracy
+    for key, value in task_results.get('test_results', {}).items():
+        clean = key[5:] if key.startswith('test_') else key
+        metrics['test_results_' + clean] = value
+
+    # Also copy data stats
+    if 'data_stats' in task_results:
+        metrics['data_stats'] = task_results['data_stats']
+
+    metrics['status'] = 'completed'
+except Exception as e:
+    metrics['status'] = 'error'
+    metrics['error'] = str(e)
+
+with open(results_file, 'w') as f:
+    json.dump(metrics, f, indent=2)
+print(f"Results saved to: {results_file}")
+EOF
+}
+
+# -----------------------------------------------------------------------------
+# Pre-flight Checks
+# -----------------------------------------------------------------------------
+preflight_checks() {
+    log_info "Running pre-flight checks..."
+
+    if [[ ! -f "${EMBEDDINGS_PATH}" ]]; then
+        log_error "Embeddings file not found: ${EMBEDDINGS_PATH}"
+        return 1
+    fi
+    log_info "Embeddings: ${EMBEDDINGS_PATH}"
+
+    if [[ ! -f "${LABELS_PATH}" ]]; then
+        log_error "Labels file not found: ${LABELS_PATH}"
+        return 1
+    fi
+    log_info "Labels: ${LABELS_PATH}"
+
+    log_info "Pre-flight checks passed"
+    return 0
+}
+
+# -----------------------------------------------------------------------------
+
+cleanup() {
+    local exit_code=$?
+    local end_time
+    end_time=$(date +%s)
+    local duration=$((end_time - START_TIME))
+
+    if [[ ${exit_code} -eq 0 ]]; then
+        log_info "Job completed successfully in ${duration} seconds"
+        update_status "COMPLETED" "Success" 0
+    else
+        log_error "Job failed with exit code ${exit_code} after ${duration} seconds"
+        update_status "FAILED" "Exit code: ${exit_code}" "${exit_code}"
+    fi
+}
+
+# =============================================================================
+# MAIN EXECUTION
+# =============================================================================
+
+START_TIME=$(date +%s)
+
+trap cleanup EXIT
+
+cd "${PROJECT_ROOT}"
+
+log_info "=========================================="
+log_info "Starting union regression"
+log_info "Model:        ${MODEL}"
+log_info "Dataset:      ${DATASET}"
+log_info "Embeddings:   ${EMBEDDINGS_PATH}"
+log_info "Labels:       ${LABELS_PATH}"
+log_info "SLURM Job:    ${SLURM_JOB_ID}"
+log_info "Hyperparameters:"
+log_info "  task_type:          ${TASK_TYPE}"
+log_info "  embedding_type:     ${EMBEDDING_TYPE}"
+log_info "  combination_method: ${COMBINATION_METHOD}"
+log_info "  hidden_dim:         ${HIDDEN_DIM}"
+log_info "  max_epochs:         ${MAX_EPOCHS}"
+log_info "  learning_rate:      ${LEARNING_RATE}"
+log_info "=========================================="
+
+update_status "RUNNING" "Job started"
+
+if ! preflight_checks; then
+    log_error "Pre-flight checks failed"
+    exit 1
+fi
+
+
+# Setup environment
+log_info "Setting up environment..."
+${ENV_SETUP}
+
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
+
+log_info "Python: $(python --version 2>&1)"
+log_info "PyTorch: $(python -c 'import torch; print(torch.__version__)' 2>/dev/null || echo 'not found')"
+
+# Create output directory
+mkdir -p "${OUTPUT_DIR}"
+
+# Run regression training
+log_info "Starting regression training..."
+
+python ${SCRIPT_PATH} \
+    --embeddings "${EMBEDDINGS_PATH}" \
+    --labels "${LABELS_PATH}" \
+    --task_name "union_regression_${DATASET}" \
+    --task_type "${TASK_TYPE}" \
+    --output_dir "${OUTPUT_DIR}" \
+    --config "${CONFIG_PATH}" \
+    --embedding_type "${EMBEDDING_TYPE}" \
+    --combination_method "${COMBINATION_METHOD}" \
+    --hidden_dim ${HIDDEN_DIM} \
+    --num_labels ${NUM_LABELS} \
+    --batch_size ${BATCH_SIZE} \
+    --max_epochs ${MAX_EPOCHS} \
+    --learning_rate ${LEARNING_RATE} \
+    --dropout_prob ${DROPOUT_PROB} \
+    --seed ${SEED} \
+    --head_type ${HEAD_TYPE} \
+    2>&1
+
+# Extract metrics from run_task.py output
+TASK_RESULTS="${OUTPUT_DIR}/results.json"
+if [[ -f "${TASK_RESULTS}" ]]; then
+    log_info "Extracting metrics..."
+    extract_metrics "${TASK_RESULTS}"
+else
+    log_warn "No results.json found at ${TASK_RESULTS}"
+fi
+
+log_info "Union regression complete"

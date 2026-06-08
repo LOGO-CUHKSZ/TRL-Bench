@@ -1,0 +1,456 @@
+# Dataset configurations for SLURM embedding generation
+#
+# Size categories determine resource allocation:
+#   SMALL: <1G data, 4-8 hours time limit
+#   MEDIUM: 1-20G data, 12-24 hours time limit
+#   LARGE: >20G data, 48-72 hours time limit
+#
+# tables_dir: Relative path from dataset directory to CSV files
+#             Set to "." if CSVs are at dataset root
+#             Set to null if auto-detection is preferred
+
+datasets:
+  # =====================
+  # SMALL DATASETS (<1G)
+  # =====================
+
+  sato:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "tables"
+    description: "SATO column type classification dataset"
+
+  wtq:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "tables"
+    description: "WikiTableQuestions semantic parsing dataset"
+
+  tabfact:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "tables"
+    table_embedding: true
+    description: "Table fact verification dataset"
+
+  semantic_parsing:
+    size_category: SMALL
+    # Uses same tables as WTQ - reference wtq/tables directly
+    tables_dir: null
+    tables_source: "wtq"  # Tables are in data/wtq/tables
+    description: "WikiTableQuestions semantic parsing task"
+
+  wiki_union:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "tables"
+    table_embedding: true
+    description: "Wikipedia table union search dataset"
+
+  wiki-join-search-deepjoin:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "datasets"
+    description: "DeepJoin Wikipedia join search dataset"
+
+  ecb_union:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "tables"
+    table_embedding: true
+    description: "ECB statistical data union search dataset"
+
+  santos:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "datalake"
+    description: "SANTOS data lake union search benchmark"
+
+  ugen_v1:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "all_tables"
+    description: "UGEN-V1: LLM-generated union benchmark with same-topic hard negatives"
+
+  ugen_v2:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "all_tables"
+    description: "UGEN-V2: harder union benchmark with sparsity and less value overlap"
+
+  tus:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "datalake"
+    description: "TUS table union search benchmark (1526 datalake tables)"
+
+  tus_hard:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "datalake"
+    description: "TUS-Hard@0.70: low-overlap subset (1486 datalake tables)"
+
+  WikiCT_relation:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "tables"
+    description: "WikiCT relation extraction dataset (merged train/test tables)"
+
+  sotab:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "tables"
+    description: "SOTAB v2 web table benchmark (schema.org CTA/CPA annotations)"
+
+  WikiCT:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "tables"
+    description: "WikiCT column type dataset (merged train/test tables)"
+
+  # =====================
+  # ROW-PREDICTION SHOWCASE (rbench / OpenML)
+  # =====================
+  # Staged via `stage_dataset(suite='rbench', task='row_prediction', ...)`
+  # which materializes `data/openml_<id>/{data.csv,splits.npz,dataset.json,labels.json}`.
+  # The single data.csv is treated as one table by the directory-mode row
+  # pipeline (--type row); class column is left in features (no
+  # --label_columns default) since this entry exists for smoke-test parity
+  # with the row family. For split-aware row_prediction, prefer --type
+  # row_data (which expects datasets/row_data/openml_*/).
+  openml_1486:
+    size_category: SMALL
+    shards: 1
+    tables_dir: "."
+    description: "OpenML 1486 (nomao) — row_prediction smoke target (rbench)"
+
+  # =====================
+  # MEDIUM DATASETS (1-20G)
+  # =====================
+
+  nq_tables:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "csv"
+    table_embedding: true
+    description: "Natural Questions tables dataset"
+
+  wiki_containment:
+    size_category: SMALL
+    # Uses tables from wiki-join-search-deepjoin which has real column headers
+    # (wiki_union has generic col0/col1 headers that don't match containment labels)
+    tables_dir: null
+    tables_source: "wiki-join-search-deepjoin"  # Tables are in data/wiki-join-search-deepjoin/datasets
+    description: "Wikipedia table containment task"
+
+  ckan_subset:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "tables_all"
+    table_embedding: true
+    description: "CKAN open data subset"
+
+  spider_join:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "spider-join/tables_all"
+    table_embedding: true
+    description: "Spider SQL join search dataset"
+
+  # =====================
+  # LARGE DATASETS (>20G)
+  # =====================
+
+  ecb_join:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "tables"
+    description: "ECB statistical data join search dataset"
+
+  opendata_main:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "tables"
+    description: "Large open data table collection"
+
+  opendata_can:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "tables"
+    description: "Open data (Canada) join/union benchmark"
+
+  opendata_usa:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "tables"
+    description: "Open data (USA) join/union benchmark"
+
+  opendata_uk_sg:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "tables"
+    description: "Open data (UK/SG) join/union benchmark"
+
+  valentine:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "tables"
+    description: "Valentine schema matching benchmark (~551 table pairs, less any excluded)"
+
+  # =====================
+  # OBSERVATORY & TESTBED
+  # =====================
+
+  observatory_wiki_tables_original:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "original"
+    tables_source: "observatory_wiki_tables"
+    description: "Observatory Wikipedia tables, original (4,964 CSVs)"
+
+  observatory_wiki_tables_0.25:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "sampled_0.25"
+    tables_source: "observatory_wiki_tables"
+    description: "Observatory Wikipedia tables, 25% sampled (50,009 CSVs)"
+
+  observatory_wiki_tables_0.5:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "sampled_0.5"
+    tables_source: "observatory_wiki_tables"
+    description: "Observatory Wikipedia tables, 50% sampled (54,604 CSVs)"
+
+  observatory_wiki_tables_0.75:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "sampled_0.75"
+    tables_source: "observatory_wiki_tables"
+    description: "Observatory Wikipedia tables, 75% sampled (54,604 CSVs)"
+
+  testbedXS:
+    size_category: SMALL
+    tables_dir: "datasets"
+    description: "TestbedXS schema matching benchmark (28 CSVs)"
+
+  # =====================
+  # DLTE SHOWCASE
+  # =====================
+
+  dlte_v1_queries:
+    size_category: SMALL
+    shards: 5
+    tables_source: "dlte_v1/datasets/dlte_v1"
+    tables_dir: "queries/tables"
+    table_embedding: true
+    row_embedding: true
+    description: "DLTE seed/query fragments (5,516 small CSVs)"
+
+  dlte_v1_targets:
+    size_category: SMALL
+    shards: 5
+    tables_source: "dlte_v1/datasets/dlte_v1"
+    tables_dir: "lake/targets/tables"
+    table_embedding: true
+    row_embedding: true
+    description: "DLTE union+join target fragments (11,032 small CSVs)"
+
+  dlte_v1_all:
+    size_category: SMALL
+    shards: 5
+    tables_source: "dlte_v1"
+    tables_dir: "all_tables"
+    models: [starmie]
+    description: "DLTE combined corpus (queries + targets + CKAN distractors, 53,288 symlinked CSVs) — used for Starmie unified pretraining"
+
+  # =====================
+  # DB VARIANTS
+  # =====================
+
+  DB_DBcontent_equivalence_pre:
+    size_category: SMALL
+    tables_source: "DB_DBcontent_equivalence"
+    tables_dir: "pre"
+    description: "DB content equivalence — original tables (80 CSVs)"
+
+  DB_DBcontent_equivalence_post:
+    size_category: SMALL
+    tables_source: "DB_DBcontent_equivalence"
+    tables_dir: "post"
+    description: "DB content equivalence — modified tables (274 CSVs)"
+
+  DB_schema_abbreviation_pre:
+    size_category: SMALL
+    tables_source: "DB_schema_abbreviation"
+    tables_dir: "pre"
+    description: "DB schema abbreviation — original tables (80 CSVs)"
+
+  DB_schema_abbreviation_post:
+    size_category: SMALL
+    tables_source: "DB_schema_abbreviation"
+    tables_dir: "post"
+    description: "DB schema abbreviation — modified tables (390 CSVs)"
+
+  DB_schema_synonym_pre:
+    size_category: SMALL
+    tables_source: "DB_schema_synonym"
+    tables_dir: "pre"
+    description: "DB schema synonym — original tables (80 CSVs)"
+
+  DB_schema_synonym_post:
+    size_category: SMALL
+    tables_source: "DB_schema_synonym"
+    tables_dir: "post"
+    description: "DB schema synonym — modified tables (388 CSVs)"
+
+  # =====================
+  # SHUFFLED VARIANTS
+  # =====================
+
+  wiki_tables_shuffled_column:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "column_shuffle"
+    tables_source: "wiki_tables_shuffled"
+    row_embedding: true
+    row_embedding_args:
+      phase1_epochs: 10
+      num_epoch: 20
+    description: "Wikipedia tables with shuffled column order (52K CSVs, 11 shuffles per table)"
+
+  wiki_tables_shuffled_row:
+    size_category: SMALL
+    shards: 5
+    tables_dir: "row_shuffle"
+    tables_source: "wiki_tables_shuffled"
+    row_embedding: true
+    row_embedding_args:
+      phase1_epochs: 10
+      num_epoch: 20
+    description: "Wikipedia tables with shuffled row order (55K CSVs, 11 shuffles per table)"
+
+  # =====================
+  # RECORD LINKAGE: DeepMatcher
+  # =====================
+
+  deepmatcher_amazon_google:
+    size_category: SMALL
+    tables_dir: "tables"
+    tables_source: "record_linkage/deepmatcher_amazon_google"
+    row_embedding: true
+    description: "DeepMatcher Amazon-Google product matching"
+
+  deepmatcher_beer:
+    size_category: SMALL
+    tables_dir: "tables"
+    tables_source: "record_linkage/deepmatcher_beer"
+    row_embedding: true
+    description: "DeepMatcher Beer reviews matching"
+
+  deepmatcher_dblp_acm:
+    size_category: SMALL
+    tables_dir: "tables"
+    tables_source: "record_linkage/deepmatcher_dblp_acm"
+    row_embedding: true
+    description: "DeepMatcher DBLP-ACM citation matching"
+
+  deepmatcher_dblp_scholar:
+    size_category: SMALL
+    tables_dir: "tables"
+    tables_source: "record_linkage/deepmatcher_dblp_scholar"
+    row_embedding: true
+    description: "DeepMatcher DBLP-GoogleScholar citation matching"
+
+  deepmatcher_fodors_zagats:
+    size_category: SMALL
+    tables_dir: "tables"
+    tables_source: "record_linkage/deepmatcher_fodors_zagats"
+    row_embedding: true
+    description: "DeepMatcher Fodors-Zagats restaurant matching"
+
+  deepmatcher_itunes_amazon:
+    size_category: SMALL
+    tables_dir: "tables"
+    tables_source: "record_linkage/deepmatcher_itunes_amazon"
+    row_embedding: true
+    description: "DeepMatcher iTunes-Amazon music matching"
+
+  deepmatcher_walmart_amazon:
+    size_category: SMALL
+    tables_dir: "tables"
+    tables_source: "record_linkage/deepmatcher_walmart_amazon"
+    row_embedding: true
+    description: "DeepMatcher Walmart-Amazon product matching"
+
+  deepmatcher_abt_buy:
+    size_category: SMALL
+    tables_dir: "tables"
+    tables_source: "record_linkage/deepmatcher_abt_buy"
+    row_embedding: true
+    description: "DeepMatcher Abt-Buy product matching"
+
+  # Dirty variants
+  deepmatcher_dblp_acm_dirty:
+    size_category: SMALL
+    tables_dir: "tables"
+    tables_source: "record_linkage/deepmatcher_dblp_acm_dirty"
+    row_embedding: true
+    description: "DeepMatcher DBLP-ACM dirty variant"
+
+  deepmatcher_dblp_scholar_dirty:
+    size_category: SMALL
+    tables_dir: "tables"
+    tables_source: "record_linkage/deepmatcher_dblp_scholar_dirty"
+    row_embedding: true
+    description: "DeepMatcher DBLP-GoogleScholar dirty variant"
+
+  deepmatcher_itunes_amazon_dirty:
+    size_category: SMALL
+    tables_dir: "tables"
+    tables_source: "record_linkage/deepmatcher_itunes_amazon_dirty"
+    row_embedding: true
+    description: "DeepMatcher iTunes-Amazon dirty variant"
+
+  deepmatcher_walmart_amazon_dirty:
+    size_category: SMALL
+    tables_dir: "tables"
+    tables_source: "record_linkage/deepmatcher_walmart_amazon_dirty"
+    row_embedding: true
+    description: "DeepMatcher Walmart-Amazon dirty variant"
+
+  # =====================
+  # RECORD LINKAGE: WDC Products
+  # =====================
+
+  wdc_products_small:
+    size_category: SMALL
+    tables_dir: "tables"
+    tables_source: "record_linkage/wdc_products_small"
+    row_embedding: true
+    description: "WDC Products matching (small, ~2.5K training pairs)"
+
+  wdc_products_medium:
+    size_category: SMALL
+    tables_dir: "tables"
+    tables_source: "record_linkage/wdc_products_medium"
+    row_embedding: true
+    description: "WDC Products matching (medium, ~8K training pairs)"
+
+  wdc_products_large:
+    size_category: SMALL
+    tables_dir: "tables"
+    tables_source: "record_linkage/wdc_products_large"
+    row_embedding: true
+    description: "WDC Products matching (large, ~18K training pairs)"
+
+  wdc_products_xlarge:
+    size_category: SMALL
+    tables_dir: "tables"
+    tables_source: "record_linkage/wdc_products_xlarge"
+    row_embedding: true
+    description: "WDC Products matching (xlarge, ~30K training pairs)"
+
+# Excluded datasets (not in scope):
+# - adult: Single-table classification task
+# - tabsketchfm: TabSketchFM-specific pretraining data

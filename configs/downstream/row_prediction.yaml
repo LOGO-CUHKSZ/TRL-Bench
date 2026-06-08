@@ -1,0 +1,41 @@
+task_name: row_prediction
+task_type: auto
+
+head:
+  type: mlp
+  input_dim: auto
+  output_dim: auto
+  hidden_dim: 256
+  num_layers: 2
+  dropout: 0.1
+  activation: relu
+
+training:
+  backend: pytorch
+  optimizer:
+    type: adamw
+    lr: 1.0e-3
+    weight_decay: 0
+  scheduler:
+    type: none
+  loss:
+    type: auto
+  batch_size: 512
+  max_epochs: 500
+  seed: 42
+  device: auto
+  deterministic: false
+  early_stopping:
+    monitor: val_loss
+    patience: 15
+    mode: min
+  checkpointing:
+    monitor: val_loss
+    mode: min
+    save_per_epoch: false
+  logging:
+    wandb: false
+
+evaluation:
+  metrics: [accuracy]
+  threshold: 0.5

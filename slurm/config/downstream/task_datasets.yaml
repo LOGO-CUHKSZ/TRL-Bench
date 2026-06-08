@@ -1,0 +1,281 @@
+# Dataset configurations for downstream tasks
+#
+# Maps each task to the datasets it can be evaluated on and their required files.
+# Used by generate_downstream_scripts.py to validate data availability.
+#
+# To add a new dataset to a task:
+#   1. Add an entry under the task's `datasets` section with required file paths
+#   2. Ensure the dataset has embeddings at embeddings/column/{model}/{dataset}.pkl
+#   3. Regenerate scripts: python slurm/generate_downstream_scripts.py
+
+task_datasets:
+  column_clustering:
+    description: "Column clustering requires embeddings and label file (all.csv)"
+    # Required CSV format: table_id, column_id, class
+    datasets:
+      sato:
+        labels_file: "data/sato/all.csv"
+        description: "SATO column type dataset with 78 semantic types"
+      sotab:
+        labels_file: "data/sotab/all.csv"
+        description: "SOTAB column type clustering (schema.org types)"
+
+  column_relation_prediction:
+    description: "Relation prediction requires embeddings and metadata JSON files"
+    # Required format: JSON with table_id, column_id, relation_annotations
+    datasets:
+      WikiCT_relation:
+        train_metadata: "data/WikiCT_relation/train/train_metadata.json"
+        test_metadata: "data/WikiCT_relation/test/test_metadata.json"
+        description: "WikiCT relation extraction with 121 relation types"
+      sotab:
+        train_metadata: "data/sotab_cra/train/train_metadata.json"
+        test_metadata: "data/sotab_cra/test/test_metadata.json"
+        description: "SOTAB column property annotation (schema.org properties)"
+
+  column_type_prediction:
+    description: "Type prediction requires embeddings and train/test CSVs"
+    # Required CSV format: table_id, column_id, class
+    datasets:
+      sato:
+        train_csv: "data/sato/train.csv"
+        test_csv: "data/sato/test.csv"
+        description: "SATO column type classification (78 types)"
+      sotab:
+        train_csv: "data/sotab/train.csv"
+        test_csv: "data/sotab/test.csv"
+        description: "SOTAB column type annotation (schema.org types)"
+
+  join_search:
+    description: "Join search requires query CSV, ground truth CSV, and column embeddings"
+    # Query CSV format: query_table, query_column
+    # Ground truth CSV format: query_table, candidate_table, query_column, candidate_column
+    datasets:
+      opendata_main:
+        query_list: "data/opendata_main/queries.csv"
+        ground_truth: "data/opendata_main/ground_truth.csv"
+        description: "OpenData join search benchmark"
+      opendata_can:
+        query_list: "data/opendata_can/queries.csv"
+        ground_truth: "data/opendata_can/ground_truth.csv"
+        description: "OpenData Canada join search"
+      opendata_usa:
+        query_list: "data/opendata_usa/queries.csv"
+        ground_truth: "data/opendata_usa/ground_truth.csv"
+        description: "OpenData USA join search"
+      opendata_uk_sg:
+        query_list: "data/opendata_uk_sg/queries.csv"
+        ground_truth: "data/opendata_uk_sg/ground_truth.csv"
+        description: "OpenData UK/Singapore join search"
+
+  join_search_learned:
+    description: "Learned projection join search requires query CSV, ground truth CSV, fixed split, and column embeddings"
+    datasets:
+      opendata_main:
+        query_list: "data/opendata_main/queries.csv"
+        ground_truth: "data/opendata_main/ground_truth.csv"
+        split_dir: "data/opendata_main/splits/join_search"
+        description: "OpenData join search with learned projection"
+      opendata_can:
+        query_list: "data/opendata_can/queries.csv"
+        ground_truth: "data/opendata_can/ground_truth.csv"
+        split_dir: "data/opendata_can/splits/join_search"
+        description: "OpenData Canada join search with learned projection"
+      opendata_usa:
+        query_list: "data/opendata_usa/queries.csv"
+        ground_truth: "data/opendata_usa/ground_truth.csv"
+        split_dir: "data/opendata_usa/splits/join_search"
+        description: "OpenData USA join search with learned projection"
+      opendata_uk_sg:
+        query_list: "data/opendata_uk_sg/queries.csv"
+        ground_truth: "data/opendata_uk_sg/ground_truth.csv"
+        split_dir: "data/opendata_uk_sg/splits/join_search"
+        description: "OpenData UK/Singapore join search with learned projection"
+
+  join_classification:
+    description: "Join classification requires labels JSON and table-level embeddings"
+    # Labels JSON format: {train: [{table1, table2, label, ...}], valid: [...], test: [...]}
+    datasets:
+      spider_join:
+        labels_file: "data/spider_join/spider-join/labels.json"
+        labels_file_strict: "data/spider_join/spider-join/labels_strict.json"
+        description: "Spider join binary classification"
+
+  join_containment:
+    description: "Containment estimation requires labels JSON and column-level embeddings"
+    # Labels JSON format: {train: [{table1, table2, label, join_col_table1, join_col_table2}], ...}
+    datasets:
+      wiki_containment:
+        labels_file: "data/wiki_containment/labels.json"
+        labels_file_strict: "data/wiki_containment/labels_strict.json"
+        description: "Wiki containment regression (R2 metric)"
+
+  # table_fact_verification: removed (see tasks.yaml)
+
+  table_retrieval:
+    description: "Table retrieval requires column embeddings + query embeddings + NQ tables dataset"
+    query_encoders:
+      - sentence_t5
+      - mpnet
+    datasets:
+      nq_tables:
+        train_questions: "data/nq_tables/train.json"
+        dev_questions: "data/nq_tables/dev.json"
+        test_questions: "data/nq_tables/test.json"
+        tables_json: "data/nq_tables/tables.json"
+        table_id_mapping: "data/nq_tables/table_id_to_csv.json"
+        query_embeddings_base: "embeddings/table_retrieval"
+        description: "NQ Tables: 169K Wikipedia tables, train/dev/test question splits"
+
+  table_subset:
+    description: "Table subset classification requires labels JSON and table-level embeddings"
+    datasets:
+      ckan_subset:
+        labels_file: "data/ckan_subset/labels.json"
+        description: "CKAN subset binary classification (36K tables, 30K pairs)"
+
+  union_search:
+    description: "Union search requires column embeddings and ground truth pickle"
+    datasets:
+      santos:
+        groundtruth_file: "data/santos/groundtruth.pickle"
+        description: "Santos union search benchmark (50 queries, 550 datalake tables)"
+      ugen_v1:
+        groundtruth_file: "data/ugen_v1/groundtruth.pickle"
+        description: "UGEN-V1: LLM-generated union benchmark with same-topic hard negatives (50 queries, 1000 tables)"
+      ugen_v2:
+        groundtruth_file: "data/ugen_v2/groundtruth.pickle"
+        description: "UGEN-V2: harder variant with sparsity and less value overlap (50 queries, 1000 tables)"
+      tus:
+        groundtruth_file: "data/tus/groundtruth.pickle"
+        description: "TUS table union search benchmark (1327 queries, 1526 datalake tables)"
+      tus_hard:
+        groundtruth_file: "data/tus_hard/groundtruth.pickle"
+        description: "TUS-Hard@0.70: low-overlap subset (1283 queries, containment < 0.70)"
+
+  union_classification:
+    description: "Union classification requires labels JSON and table-level embeddings"
+    datasets:
+      wiki_union:
+        labels_file: "data/wiki_union/labels.json"
+        labels_file_strict: "data/wiki_union/labels_strict.json"
+        description: "Wiki union binary classification (40K tables)"
+
+  union_regression:
+    description: "Union regression requires labels JSON and table-level embeddings"
+    datasets:
+      ecb_union:
+        labels_file: "data/ecb_union/labels.json"
+        labels_file_strict: "data/ecb_union/labels_strict.json"
+        description: "ECB union dimension regression (4K tables)"
+
+  record_linkage:
+    description: "Record linkage requires row embedding pickle + labels JSON"
+    datasets:
+      deepmatcher_amazon_google:
+        labels_file: "data/deepmatcher_amazon_google/labels.json"
+        description: "Amazon-Google product matching"
+      deepmatcher_beer:
+        labels_file: "data/deepmatcher_beer/labels.json"
+        description: "Beer reviews matching"
+      deepmatcher_dblp_acm:
+        labels_file: "data/deepmatcher_dblp_acm/labels.json"
+        description: "DBLP-ACM citation matching"
+      deepmatcher_dblp_scholar:
+        labels_file: "data/deepmatcher_dblp_scholar/labels.json"
+        description: "DBLP-GoogleScholar citation matching"
+      deepmatcher_fodors_zagats:
+        labels_file: "data/deepmatcher_fodors_zagats/labels.json"
+        description: "Fodors-Zagats restaurant matching"
+      deepmatcher_itunes_amazon:
+        labels_file: "data/deepmatcher_itunes_amazon/labels.json"
+        description: "iTunes-Amazon music matching"
+      deepmatcher_walmart_amazon:
+        labels_file: "data/deepmatcher_walmart_amazon/labels.json"
+        description: "Walmart-Amazon product matching"
+      deepmatcher_abt_buy:
+        labels_file: "data/deepmatcher_abt_buy/labels.json"
+        description: "Abt-Buy product matching"
+      deepmatcher_dblp_acm_dirty:
+        labels_file: "data/deepmatcher_dblp_acm_dirty/labels.json"
+        description: "DBLP-ACM dirty variant"
+      deepmatcher_dblp_scholar_dirty:
+        labels_file: "data/deepmatcher_dblp_scholar_dirty/labels.json"
+        description: "DBLP-GoogleScholar dirty variant"
+      deepmatcher_itunes_amazon_dirty:
+        labels_file: "data/deepmatcher_itunes_amazon_dirty/labels.json"
+        description: "iTunes-Amazon dirty variant"
+      deepmatcher_walmart_amazon_dirty:
+        labels_file: "data/deepmatcher_walmart_amazon_dirty/labels.json"
+        description: "Walmart-Amazon dirty variant"
+      wdc_products_small:
+        labels_file: "data/wdc_products_small/labels.json"
+        description: "WDC Products small (~2.5K pairs)"
+      wdc_products_medium:
+        labels_file: "data/wdc_products_medium/labels.json"
+        description: "WDC Products medium (~8K pairs)"
+      wdc_products_large:
+        labels_file: "data/wdc_products_large/labels.json"
+        description: "WDC Products large (~18K pairs)"
+      wdc_products_xlarge:
+        labels_file: "data/wdc_products_xlarge/labels.json"
+        description: "WDC Products xlarge (~30K pairs)"
+
+  schema_matching:
+    description: "Schema matching requires column embeddings + pairs manifest + ground truth CSV"
+    datasets:
+      valentine:
+        pairs_file: "data/valentine/pairs.json"
+        ground_truth: "data/valentine/ground_truth.csv"
+        tables_dir: "data/valentine/tables"
+        description: "Valentine benchmark: ~551 raw pairs across 5 sources, fewer after exclusions"
+
+  # ── DLTE (Data Lake Table Enrichment) ──────────────────────────
+
+  dlte_retrieval:
+    description: "DLTE retrieval requires table-level embeddings + ground truth query tasks"
+    datasets:
+      dlte_v1:
+        query_tasks: "data/dlte_v1/ground_truth/query_tasks.jsonl"
+        description: "DLTE v1: TabFact + WTQ fragments with CKAN distractors"
+
+  dlte_alignment:
+    description: "DLTE alignment requires column embeddings (queries, targets, ckan_subset) + Stage 1 results"
+    datasets:
+      dlte_v1:
+        query_tasks: "data/dlte_v1/ground_truth/query_tasks.jsonl"
+        fragments_manifest: "data/dlte_v1/manifests/fragments_manifest.jsonl"
+        table_maps_dir: "data/dlte_v1/ground_truth/table_maps"
+        description: "DLTE v1 column alignment"
+
+  dlte_merge:
+    description: "DLTE merge requires row embeddings + Stage 2 results"
+    datasets:
+      dlte_v1:
+        query_tasks: "data/dlte_v1/ground_truth/query_tasks.jsonl"
+        fragments_manifest: "data/dlte_v1/manifests/fragments_manifest.jsonl"
+        description: "DLTE v1 row matching + merge"
+
+  dlte_evaluation:
+    description: "DLTE evaluation requires all stage outputs + parent tables"
+    datasets:
+      dlte_v1:
+        query_tasks: "data/dlte_v1/ground_truth/query_tasks.jsonl"
+        fragments_manifest: "data/dlte_v1/manifests/fragments_manifest.jsonl"
+        parents_manifest: "data/dlte_v1/manifests/parents_filtered.jsonl"
+        table_maps_dir: "data/dlte_v1/ground_truth/table_maps"
+        description: "DLTE v1 end-to-end evaluation"
+
+  semantic_parsing:
+    description: "WTQ semantic parsing requires column embeddings + question embeddings"
+    query_encoders:
+      - sentence_t5
+      - mpnet
+    datasets:
+      semantic_parsing:
+        dataset_dir: "data/wiki_table_questions"
+        question_embeddings_base: "embeddings/semantic_parsing/wiki_table_questions"
+        test_file: "data/wiki_table_questions/data_split_1/test_split.jsonl"
+        table_file: "data/wiki_table_questions/tables.jsonl"
+        config_file: "src/trl_bench/tasks/semantic_parsing/config/mapo.json"
+        description: "WikiTableQuestions: 11K train, 2.8K dev, 4.3K test"

@@ -1,0 +1,50 @@
+task_name: record_linkage
+task_type: classification
+
+head:
+  type: mlp
+  input_dim: auto
+  output_dim: 2
+  hidden_dim: 256
+  num_layers: 2
+  activation: relu
+  dropout: 0.1
+  dropout_first: false
+
+training:
+  backend: pytorch
+  combination_method: concat
+
+  optimizer:
+    type: adamw
+    lr: 1.0e-3
+    weight_decay: 0
+
+  scheduler:
+    type: none
+
+  loss:
+    type: cross_entropy
+
+  batch_size: 64
+  max_epochs: 50
+  seed: 42
+  device: auto
+  deterministic: true
+
+  early_stopping:
+    monitor: val_f1
+    patience: 15
+    mode: max
+
+  checkpointing:
+    monitor: val_f1
+    mode: max
+    save_per_epoch: false
+
+  logging:
+    wandb: false
+
+evaluation:
+  metrics: [f1, accuracy, weighted_f1, macro_f1, precision, recall]
+  threshold: 0.5

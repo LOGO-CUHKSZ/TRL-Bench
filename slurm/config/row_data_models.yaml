@@ -1,0 +1,231 @@
+# Row data model configurations for split-aware (canonical dataset) pipeline
+# Uses --data_dir + --label_policy manifest, producing unified embedding format
+#
+# Key differences from row_models.yaml (directory-mode pipeline):
+#   - Uses --data_dir instead of --input_dir (points to dataset root, not CSV dir)
+#   - Trained models have separate train_script + generate_script (not a combined script)
+#   - Output is a directory (metadata.json + per-split .npy), not a single .pkl file
+
+default_size_category: SMALL
+default_env_setup: "source load_env"
+
+models:
+  # === Pretrained models (single generate command) ===
+  tabpfn:
+    model_type: pretrained
+    generate_script: "src/trl_bench/models/tabpfn/generate_embeddings_train_test.py"
+    args:
+      data_dir: "--data_dir"
+      embedding_dir: "--embedding_dir"
+    defaults:
+      label_policy: manifest
+      mode: auto
+      n_estimators: 8
+      device: auto
+
+  tabicl:
+    model_type: pretrained
+    generate_script: "src/trl_bench/models/tabicl/generate_embeddings_train_test.py"
+    args:
+      data_dir: "--data_dir"
+      embedding_dir: "--embedding_dir"
+    defaults:
+      label_policy: manifest
+      mode: auto
+      n_estimators: 1
+      device: auto
+
+  tuta:
+    model_type: pretrained
+    generate_script: "src/trl_bench/models/tuta/generate_row_embeddings.py"
+    checkpoint: "checkpoints/tuta/tuta.bin"
+    size_category: MEDIUM  # TUTA cell tokenizer is slow
+    args:
+      data_dir: "--dataset_dir"    # TUTA uses different arg names
+      embedding_dir: "--output_dir"
+      model_path: "--model_path"
+    defaults:
+      label_policy: manifest
+      model_type: tuta
+
+  bert:
+    model_type: pretrained
+    generate_script: "src/trl_bench/models/bert/generate_embeddings_train_test.py"
+    args:
+      data_dir: "--data_dir"
+      embedding_dir: "--embedding_dir"
+    defaults:
+      label_policy: manifest
+      model: "bert-base-uncased"
+      device: auto
+      max_length: 512
+      max_chars_per_cell: 50
+      row_batch_size: 64
+
+  gte:
+    model_type: pretrained
+    generate_script: "src/trl_bench/models/gte/generate_embeddings_train_test.py"
+    args:
+      data_dir: "--data_dir"
+      embedding_dir: "--embedding_dir"
+    defaults:
+      label_policy: manifest
+      model: "thenlper/gte-base"
+      device: auto
+      max_length: 512
+      max_chars_per_cell: 100
+      row_batch_size: 64
+
+  tabbie:
+    model_type: pretrained
+    generate_script: "src/trl_bench/models/tabbie/generate_embeddings_train_test.py"
+    checkpoint: "checkpoints/tabbie/weights.pt"
+    args:
+      data_dir: "--data_dir"
+      embedding_dir: "--embedding_dir"
+      model_path: "--model_path"
+    defaults:
+      label_policy: manifest
+
+  # === Trained models (train + generate) ===
+  scarf:
+    model_type: trained
+    train_script: "src/trl_bench/models/scarf/train_scarf.py"
+    generate_script: "src/trl_bench/models/scarf/generate_embeddings.py"
+    args: &trained_args
+      data_dir: "--data_dir"
+      checkpoint_dir: "--checkpoint_dir"
+      embedding_dir: "--embedding_dir"
+    defaults: &ssl_defaults
+      label_policy: manifest
+      batch_size: 128
+      phase1_epochs: 20
+      hidden_dim: 512
+      n_hidden_layers: 3
+      random_seed: 42
+    model_defaults:
+      corruption_rate: 0.6
+
+  switchtab:
+    model_type: trained
+    train_script: "src/trl_bench/models/switchtab/train_switchtab.py"
+    generate_script: "src/trl_bench/models/switchtab/generate_embeddings.py"
+    args: *trained_args
+    defaults: *ssl_defaults
+    model_defaults:
+      corruption_rate: 0.3
+      alpha: 1.0
+      val_ratio: 0.2
+
+  dae:
+    model_type: trained
+    train_script: "src/trl_bench/models/dae/train_dae.py"
+    generate_script: "src/trl_bench/models/dae/generate_embeddings.py"
+    args: *trained_args
+    defaults: *ssl_defaults
+    model_defaults:
+      noise_type: Swap
+      noise_ratio: 0.3
+
+  subtab:
+    model_type: trained
+    train_script: "src/trl_bench/models/subtab/train_subtab.py"
+    generate_script: "src/trl_bench/models/subtab/generate_embeddings.py"
+    args: *trained_args
+    defaults: *ssl_defaults
+    model_defaults:
+      n_subsets: 4
+      overlap_ratio: 0.75
+
+  vime:
+    model_type: trained
+    train_script: "src/trl_bench/models/vime/train_vime.py"
+    generate_script: "src/trl_bench/models/vime/generate_embeddings.py"
+    args: *trained_args
+    defaults: *ssl_defaults
+    model_defaults:
+      p_m: 0.3
+
+  saint:
+    model_type: trained
+    train_script: "src/trl_bench/models/saint/train_saint.py"
+    generate_script: "src/trl_bench/models/saint/generate_embeddings.py"
+    args: *trained_args
+    defaults:
+      label_policy: manifest
+      batch_size: 128
+      phase1_epochs: 20
+      random_seed: 42
+    model_defaults:
+      emb_dim: 512
+      encoder_depth: 6
+      n_head: 8
+      ffn_factor: 4.0
+      saint_variant: saint
+      cutmix_probability: 0.3
+      mixup_alpha: 0.2
+      tau: 0.7
+      lambda_denoise: 10.0
+      pretraining_head_dim: 256
+      dropout_rate: 0.0
+    dataset_overrides:
+      openml_46912:
+        batch_size: 16
+      openml_40978:
+        batch_size: 16
+      openml_46933:
+        batch_size: 16
+
+  transtab:
+    model_type: trained
+    train_script: "src/trl_bench/models/transtab/train_transtab.py"
+    generate_script: "src/trl_bench/models/transtab/generate_embeddings.py"
+    args: *trained_args
+    defaults:
+      label_policy: manifest
+      batch_size: 64
+      num_epoch: 50
+      hidden_dim: 512
+      random_seed: 42
+    model_defaults:
+      num_layer: 2
+      num_attention_head: 8
+      num_partition: 3
+      overlap_ratio: 0.5
+      lr: 0.0001
+    dataset_overrides:
+      openml_46912:
+        batch_size: 16
+
+  tabtransformer:
+    model_type: trained
+    train_script: "src/trl_bench/models/tabtransformer/train_tabtransformer.py"
+    generate_script: "src/trl_bench/models/tabtransformer/generate_embeddings.py"
+    args: *trained_args
+    defaults: *ssl_defaults
+    model_defaults:
+      emb_dim: 512               # paper hp: ref row_data sbatch passed --emb_dim 512
+                                 # (REF metadata embedding_dim=512). Script default is
+                                 # 32 -- 16x too small -> ~6% acc drop on openml_3.
+      n_transformer_layers: 6
+      n_heads: 8
+      mlm_probability: 0.15
+      rtd_probability: 0.15
+      dropout_rate: 0.04
+
+  tabular_binning:
+    model_type: trained
+    train_script: "src/trl_bench/models/tabular_binning/train_tabular_binning.py"
+    generate_script: "src/trl_bench/models/tabular_binning/generate_embeddings.py"
+    args: *trained_args
+    defaults: *ssl_defaults
+    model_defaults:
+      n_bin: 10
+      pretext_task: BinRecon
+      decoder_dim: 128
+      decoder_depth: 3
+      p_m: 0.2
+      mask_type: random
+      dropout_rate: 0.2
+
+dataset_overrides: {}

@@ -1,0 +1,270 @@
+#!/bin/bash
+#SBATCH --job-name=${JOB_NAME}
+#SBATCH --output=${LOG_DIR}/jobs/${JOB_NAME}_%j.out
+#SBATCH --error=${LOG_DIR}/jobs/${JOB_NAME}_%j.err
+#SBATCH --time=${TIME_LIMIT}
+#SBATCH --mem=${MEMORY}
+#SBATCH --gres=gpu:${GPUS}
+#SBATCH --cpus-per-task=${CPUS}
+#SBATCH --partition=${PARTITION}
+${EXTRA_SLURM_DIRECTIVES}
+
+# =============================================================================
+# SLURM Text Embedding Job
+# Job: ${JOB_NAME}
+# Generated: ${TIMESTAMP}
+# =============================================================================
+
+set -euo pipefail
+
+# -----------------------------------------------------------------------------
+# Configuration
+# -----------------------------------------------------------------------------
+PROJECT_ROOT="${PROJECT_ROOT}"
+SCRIPT_PATH="${SCRIPT_PATH}"
+MODE="${MODE}"
+INPUT_JSON="${INPUT_JSON}"
+TEXT_FIELD="${TEXT_FIELD}"
+TOKENS_FIELD="${TOKENS_FIELD}"
+ID_FIELD="${ID_FIELD}"
+MODEL="${MODEL}"
+BATCH_SIZE="${BATCH_SIZE}"
+MAX_LENGTH="${MAX_LENGTH}"
+OUTPUT_PATH="${OUTPUT_PATH}"
+STATUS_FILE="${STATUS_FILE}"
+TIMING_FILE="${TIMING_FILE}"
+
+# Job metadata
+SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
+JOB_KEY="${JOB_NAME}"
+LOG_PREFIX="[${JOB_KEY}]"
+
+# -----------------------------------------------------------------------------
+# Logging Functions
+# -----------------------------------------------------------------------------
+log_info() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} INFO: $*"
+}
+
+log_warn() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} WARN: $*" >&2
+}
+
+log_error() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} ERROR: $*" >&2
+}
+
+# -----------------------------------------------------------------------------
+# Status Update Functions
+# -----------------------------------------------------------------------------
+update_status() {
+    local status="$1"
+    local message="${2:-}"
+    local exit_code="${3:-0}"
+
+    local timestamp
+    timestamp=$(date -Iseconds)
+
+    mkdir -p "$(dirname "${STATUS_FILE}")"
+
+    (
+        flock -w 10 200 || { log_warn "Could not acquire lock for status update"; return 1; }
+
+        if [[ ! -f "${STATUS_FILE}" ]]; then
+            echo '{}' > "${STATUS_FILE}"
+        fi
+
+        python3 << EOF
+import json
+
+status_file = "${STATUS_FILE}"
+job_key = "${JOB_KEY}"
+
+try:
+    with open(status_file, 'r') as f:
+        data = json.load(f)
+except (json.JSONDecodeError, FileNotFoundError):
+    data = {}
+
+data[job_key] = {
+    'status': "${status}",
+    'message': "${message}",
+    'exit_code': ${exit_code},
+    'timestamp': "${timestamp}",
+    'slurm_job_id': "${SLURM_JOB_ID}",
+    'script': "${SCRIPT_PATH}",
+    'mode': "${MODE}",
+    'input_json': "${INPUT_JSON}",
+    'text_field': "${TEXT_FIELD}" or None,
+    'tokens_field': "${TOKENS_FIELD}" or None,
+    'model': "${MODEL}",
+    'batch_size': ${BATCH_SIZE},
+    'max_length': ${MAX_LENGTH},
+    'output_path': "${OUTPUT_PATH}",
+}
+
+with open(status_file, 'w') as f:
+    json.dump(data, f, indent=2)
+EOF
+    ) 200>"${STATUS_FILE}.lock"
+}
+
+# -----------------------------------------------------------------------------
+# Timing Functions
+# -----------------------------------------------------------------------------
+record_timing() {
+    local duration="$1"
+    local texts_processed="${2:-0}"
+    local status="${3:-completed}"
+
+    local timestamp
+    timestamp=$(date -Iseconds)
+
+    mkdir -p "$(dirname "${TIMING_FILE}")"
+
+    (
+        flock -w 10 200 || { log_warn "Could not acquire lock for timing"; return 1; }
+
+        if [[ ! -f "${TIMING_FILE}" ]]; then
+            echo "timestamp,job,slurm_job_id,duration_seconds,texts_processed,status" > "${TIMING_FILE}"
+        fi
+
+        echo "${timestamp},${JOB_KEY},${SLURM_JOB_ID},${duration},${texts_processed},${status}" >> "${TIMING_FILE}"
+    ) 200>"${TIMING_FILE}.lock"
+}
+
+# -----------------------------------------------------------------------------
+# GPU Verification
+# -----------------------------------------------------------------------------
+verify_gpu() {
+    log_info "Verifying GPU availability..."
+
+    if ! command -v nvidia-smi &> /dev/null; then
+        log_warn "nvidia-smi not found, GPU verification skipped"
+        return 0
+    fi
+
+    if ! nvidia-smi &> /dev/null; then
+        log_error "GPU not accessible"
+        return 1
+    fi
+
+    local gpu_info
+    gpu_info=$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || echo "Unknown")
+    log_info "GPU: ${gpu_info}"
+    return 0
+}
+
+# -----------------------------------------------------------------------------
+# Cleanup Handler
+# -----------------------------------------------------------------------------
+cleanup() {
+    local exit_code=$?
+    local end_time
+    end_time=$(date +%s)
+    local duration=$((end_time - START_TIME))
+
+    if [[ ${exit_code} -eq 0 ]]; then
+        log_info "Job completed successfully in ${duration} seconds"
+        update_status "COMPLETED" "Success" 0
+        record_timing "${duration}" "${TEXTS_PROCESSED:-0}" "completed"
+    else
+        log_error "Job failed with exit code ${exit_code} after ${duration} seconds"
+        update_status "FAILED" "Exit code: ${exit_code}" "${exit_code}"
+        record_timing "${duration}" "${TEXTS_PROCESSED:-0}" "failed"
+    fi
+}
+
+# =============================================================================
+# MAIN EXECUTION
+# =============================================================================
+
+START_TIME=$(date +%s)
+TEXTS_PROCESSED=0
+
+trap cleanup EXIT
+
+cd "${PROJECT_ROOT}"
+
+log_info "=========================================="
+log_info "Starting text embedding generation"
+log_info "Script:     ${SCRIPT_PATH}"
+log_info "Mode:       ${MODE}"
+log_info "Input:      ${INPUT_JSON}"
+if [[ -n "${TOKENS_FIELD:-}" ]]; then
+    log_info "Tokens field: ${TOKENS_FIELD}"
+else
+    log_info "Text field: ${TEXT_FIELD}"
+fi
+log_info "Model:      ${MODEL}"
+log_info "Batch size: ${BATCH_SIZE}"
+log_info "Max length: ${MAX_LENGTH}"
+log_info "Output:     ${OUTPUT_PATH}"
+log_info "SLURM Job:  ${SLURM_JOB_ID}"
+log_info "=========================================="
+
+update_status "RUNNING" "Job started"
+
+# Check input file exists
+if [[ ! -f "${INPUT_JSON}" ]]; then
+    log_error "Input file does not exist: ${INPUT_JSON}"
+    exit 1
+fi
+
+# Verify GPU
+if ! verify_gpu; then
+    log_error "GPU verification failed"
+    exit 1
+fi
+
+# Setup environment
+log_info "Setting up environment..."
+${ENV_SETUP}
+
+log_info "Python: $(python --version 2>&1)"
+log_info "PyTorch: $(python -c 'import torch; print(torch.__version__)' 2>/dev/null || echo 'not found')"
+
+# Create output directory
+mkdir -p "$(dirname "${OUTPUT_PATH}")"
+
+# Run the text embedding script
+log_info "Starting text embedding generation..."
+
+ID_FIELD_ARG=""
+if [[ -n "${ID_FIELD:-}" ]]; then
+    ID_FIELD_ARG="--id_field ${ID_FIELD}"
+fi
+
+# Use --tokens_field when set, otherwise --text_field
+if [[ -n "${TOKENS_FIELD:-}" ]]; then
+    FIELD_ARG="--tokens_field ${TOKENS_FIELD}"
+else
+    FIELD_ARG="--text_field ${TEXT_FIELD}"
+fi
+
+python ${SCRIPT_PATH} \
+    --mode "${MODE}" \
+    --input_json "${INPUT_JSON}" \
+    ${FIELD_ARG} \
+    ${ID_FIELD_ARG} \
+    --model "${MODEL}" \
+    --batch_size ${BATCH_SIZE} \
+    --max_length ${MAX_LENGTH} \
+    --device cuda \
+    --output "${OUTPUT_PATH}"
+
+# Count texts processed
+if [[ -f "${OUTPUT_PATH}" ]]; then
+    TEXTS_PROCESSED=$(python3 -c "
+import pickle
+try:
+    with open('${OUTPUT_PATH}', 'rb') as f:
+        data = pickle.load(f)
+    print(len(data) if isinstance(data, list) else 0)
+except:
+    print(0)
+" 2>/dev/null || echo "0")
+    log_info "Processed ${TEXTS_PROCESSED} texts"
+fi
+
+log_info "Text embedding generation complete"

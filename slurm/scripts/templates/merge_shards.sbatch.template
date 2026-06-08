@@ -1,0 +1,136 @@
+#!/bin/bash
+#SBATCH --job-name=${MERGE_JOB_NAME}
+#SBATCH --output=${LOG_DIR}/jobs/${MERGE_LOG_PREFIX}${MODEL}_${DATASET}_merge_%j.out
+#SBATCH --error=${LOG_DIR}/jobs/${MERGE_LOG_PREFIX}${MODEL}_${DATASET}_merge_%j.err
+#SBATCH --time=01:00:00
+#SBATCH --mem=32G
+#SBATCH --cpus-per-task=4
+#SBATCH --partition=${CPU_PARTITION}
+${EXTRA_SLURM_DIRECTIVES}
+
+# =============================================================================
+# SLURM Shard Merge Job
+# Model: ${MODEL}
+# Dataset: ${DATASET}
+# Generated: ${TIMESTAMP}
+# =============================================================================
+
+set -euo pipefail
+
+# -----------------------------------------------------------------------------
+# Configuration
+# -----------------------------------------------------------------------------
+PROJECT_ROOT="${PROJECT_ROOT}"
+MODEL="${MODEL}"
+DATASET="${DATASET}"
+STATUS_FILE="${STATUS_FILE}"
+OUTPUT_PATH="${OUTPUT_PATH}"
+SHARD_PATHS="${SHARD_PATHS}"
+
+# Job metadata
+SLURM_JOB_ID="${SLURM_JOB_ID:-local}"
+JOB_KEY="${MERGE_JOB_KEY}"
+LOG_PREFIX="[${JOB_KEY}]"
+
+# -----------------------------------------------------------------------------
+# Logging Functions
+# -----------------------------------------------------------------------------
+log_info() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} INFO: $*"
+}
+
+log_error() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} ERROR: $*" >&2
+}
+
+# -----------------------------------------------------------------------------
+# Status Update (same flock mechanism as embedding template)
+# -----------------------------------------------------------------------------
+update_status() {
+    local status="$1"
+    local message="${2:-}"
+    local exit_code="${3:-0}"
+    local timestamp
+    timestamp=$(date -Iseconds)
+
+    mkdir -p "$(dirname "${STATUS_FILE}")"
+
+    (
+        flock -w 10 200 || { echo "WARN: Could not acquire lock"; return 1; }
+
+        if [[ ! -f "${STATUS_FILE}" ]]; then
+            echo '{}' > "${STATUS_FILE}"
+        fi
+
+        python3 << EOF
+import json
+
+status_file = "${STATUS_FILE}"
+job_key = "${JOB_KEY}"
+
+try:
+    with open(status_file, 'r') as f:
+        data = json.load(f)
+except (json.JSONDecodeError, FileNotFoundError):
+    data = {}
+
+data[job_key] = {
+    'status': "${status}",
+    'message': "${message}",
+    'exit_code': ${exit_code},
+    'timestamp': "${timestamp}",
+    'slurm_job_id': "${SLURM_JOB_ID}",
+    'model': "${MODEL}",
+    'dataset': "${DATASET}",
+    'embedding_type': "${EMBEDDING_TYPE}",
+    'output_path': "${OUTPUT_PATH}",
+    'shard_type': 'merge',
+    'shard_index': -1,
+    'num_shards': ${NUM_SHARDS},
+}
+
+with open(status_file, 'w') as f:
+    json.dump(data, f, indent=2)
+EOF
+    ) 200>"${STATUS_FILE}.lock"
+}
+
+# -----------------------------------------------------------------------------
+# Cleanup Handler
+# -----------------------------------------------------------------------------
+cleanup() {
+    local exit_code=$?
+    if [[ ${exit_code} -eq 0 ]]; then
+        log_info "Merge completed successfully"
+        update_status "COMPLETED" "Merge success" 0
+    else
+        log_error "Merge failed with exit code ${exit_code}"
+        update_status "FAILED" "Merge failed: exit code ${exit_code}" "${exit_code}"
+    fi
+}
+
+# =============================================================================
+# MAIN EXECUTION
+# =============================================================================
+
+trap cleanup EXIT
+
+cd "${PROJECT_ROOT}"
+
+log_info "=========================================="
+log_info "Starting shard merge"
+log_info "Model:   ${MODEL}"
+log_info "Dataset: ${DATASET}"
+log_info "Output:  ${OUTPUT_PATH}"
+log_info "=========================================="
+
+update_status "RUNNING" "Merge started"
+
+# Setup environment
+${ENV_SETUP}
+
+python slurm/merge_shards.py \
+    --output "${OUTPUT_PATH}" \
+    --shards ${SHARD_PATHS}
+
+log_info "Merge complete"
