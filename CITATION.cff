@@ -1,21 +1,67 @@
 cff-version: 1.2.0
-# Placeholder author identity: "TRL-Bench Authors". Replace with the camera-ready
-# author list before publication (also propagate to pyproject.toml [project].authors
-# and README.md BibTeX block). Fill arXiv ID + date-released at the same time.
 message: "If you use this software, please cite the accompanying paper."
-title: "TRL-Bench: A Multi-Granular Tabular Representation Learning Benchmark"
+title: "TRL-Bench: Standardizing Cross-Paradigm Representation-Level Evaluation of Tabular Encoders"
 type: software
 authors:
-  - name: "TRL-Bench Authors"
+  - family-names: Pang
+    given-names: Wei
+  - family-names: Jian
+    given-names: Xiangru
+  - family-names: Li
+    given-names: Hehan
+  - family-names: Yu
+    given-names: Zhixuan
+  - family-names: Xue
+    given-names: Alex
+  - family-names: Li
+    given-names: Jinyang
+  - family-names: Dong
+    given-names: Zhengyuan
+  - family-names: Zhao
+    given-names: Xinjian
+  - family-names: Xu
+    given-names: Hao
+  - family-names: Zhang
+    given-names: Chao
+  - family-names: Cheng
+    given-names: Reynold
+  - family-names: Özsu
+    given-names: "M. Tamer"
+  - family-names: Yu
+    given-names: Tianshu
 version: 1.0.0
 date-released: "2026-05-19"
 license: Apache-2.0
 url: "https://github.com/LOGO-CUHKSZ/TRL-Bench"
 preferred-citation:
   type: article
-  title: "TRL-Bench: A Multi-Granular Tabular Representation Learning Benchmark"
+  title: "TRL-Bench: Standardizing Cross-Paradigm Representation-Level Evaluation of Tabular Encoders"
   authors:
-    - name: "TRL-Bench Authors"
+    - family-names: Pang
+      given-names: Wei
+    - family-names: Jian
+      given-names: Xiangru
+    - family-names: Li
+      given-names: Hehan
+    - family-names: Yu
+      given-names: Zhixuan
+    - family-names: Xue
+      given-names: Alex
+    - family-names: Li
+      given-names: Jinyang
+    - family-names: Dong
+      given-names: Zhengyuan
+    - family-names: Zhao
+      given-names: Xinjian
+    - family-names: Xu
+      given-names: Hao
+    - family-names: Zhang
+      given-names: Chao
+    - family-names: Cheng
+      given-names: Reynold
+    - family-names: Özsu
+      given-names: "M. Tamer"
+    - family-names: Yu
+      given-names: Tianshu
   year: 2026
-  journal: "arXiv preprint arXiv:TBD"
-  notes: "arXiv ID to be filled in once assigned."
+  journal: "arXiv preprint arXiv:2606.09323"

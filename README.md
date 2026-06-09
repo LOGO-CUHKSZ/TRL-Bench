@@ -1,6 +1,8 @@
 # TRL-Bench
 
-Official code release for **TRL-Bench: a multi-granular tabular representation learning benchmark**.
+Official code release for **TRL-Bench: Standardizing Cross-Paradigm Representation-Level Evaluation of Tabular Encoders**.
+
+**Paper:** [arXiv:2606.09323](https://arxiv.org/abs/2606.09323)
 
 TRL-Bench standardizes cross-paradigm representation-level evaluation of tabular encoders. Each encoder exports row-, column-, or table-embeddings through its supported wrapper, and shared lightweight heads probe them across **16 tasks** grouped into three suites: **TRL-CTbench** (column / table), **TRL-Rbench** (row), and **TRL-DLTE** (compositional Data-Lake Table Enrichment).
 
@@ -18,19 +20,14 @@ trl-bench-run \
 
 Setup, dependency notes, per-cell flags, and how to run the full grid live in [`docs/USAGE.md`](docs/USAGE.md).
 
-<!--
-Placeholder BibTeX. Replace `{TRL-Bench Authors}` and `arXiv:TBD` with the
-camera-ready author list and arXiv ID before publication. Propagate the same
-values to pyproject.toml [project].authors and CITATION.cff.
--->
 > **Citation**
 >
 > ```bibtex
-> @article{trl_bench_2026,
->   title     = {TRL-Bench: A Multi-Granular Tabular Representation Learning Benchmark},
->   author    = {{TRL-Bench Authors}},
->   journal   = {arXiv preprint arXiv:TBD},
->   year      = {2026}
+> @article{pang2026trl,
+>   title={TRL-Bench: Standardizing Cross-Paradigm Representation-Level Evaluation of Tabular Encoders},
+>   author={Pang, Wei and Jian, Xiangru and Li, Hehan and Yu, Zhixuan and Xue, Alex and Li, Jinyang and Dong, Zhengyuan and Zhao, Xinjian and Xu, Hao and Zhang, Chao and Cheng, Reynold and {\"O}zsu, M. Tamer and Yu, Tianshu},
+>   journal={arXiv preprint arXiv:2606.09323},
+>   year={2026}
 > }
 > ```
 

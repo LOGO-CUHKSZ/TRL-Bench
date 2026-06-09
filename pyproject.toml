@@ -5,14 +5,24 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "trl-bench"
 version = "1.0.0"
-description = "TRL-Bench: a multi-granular tabular representation learning benchmark"
+description = "TRL-Bench: Standardizing Cross-Paradigm Representation-Level Evaluation of Tabular Encoders"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { file = "LICENSE" }
 authors = [
-    # Placeholder identity. Replace with camera-ready author list before publication;
-    # also update CITATION.cff and README.md BibTeX block to match.
-    { name = "TRL-Bench Authors", email = "trl-bench@logo-lab.example" },
+    { name = "Wei Pang" },
+    { name = "Xiangru Jian" },
+    { name = "Hehan Li" },
+    { name = "Zhixuan Yu" },
+    { name = "Alex Xue" },
+    { name = "Jinyang Li" },
+    { name = "Zhengyuan Dong" },
+    { name = "Xinjian Zhao" },
+    { name = "Hao Xu" },
+    { name = "Chao Zhang" },
+    { name = "Reynold Cheng" },
+    { name = "M. Tamer Özsu" },
+    { name = "Tianshu Yu" },
 ]
 keywords = ["tabular", "representation-learning", "benchmark", "embeddings"]
 classifiers = [
