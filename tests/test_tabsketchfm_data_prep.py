@@ -120,7 +120,9 @@ def test_read_table_normal_inference_unchanged(tmp_path: Path) -> None:
         )
         df = read_table_from_original({str(csv_path)!r})[0][0]
         assert pat.is_integer_dtype(df["id"]), df["id"].dtype
-        assert pat.is_object_dtype(df["name"]), df["name"].dtype
+        # pandas >=3.0 infers a dedicated ``str`` dtype for text columns (was
+        # ``object`` in 2.x); accept either -- the guarantee is "not coerced to numeric".
+        assert pat.is_object_dtype(df["name"]) or pat.is_string_dtype(df["name"]), df["name"].dtype
         assert pat.is_float_dtype(df["score"]), df["score"].dtype
         print("NORMAL_OK")
         """
