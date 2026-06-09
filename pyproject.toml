@@ -58,7 +58,7 @@ tabert = ["fairseq>=0.10", "torch-scatter", "ujson", "msgpack", "pyzmq", "redis"
 turl  = ["transformers>=4.30,<5", "boto3", "sacremoses", "sentencepiece"]   # TURL ships a VENDORED transformers fork (models/turl/code/model/transformers/) used by the extraction path; the only pip-`transformers` imports are in vestigial convert_*.py/run_lm_finetuning.py (not run). Extraction verified at transformers 4.49, so we align with [bert] instead of the old <4.20 pin, which forced an ancient `tokenizers` with no Python-3.12 wheel. boto3: vendored file_utils.py; sacremoses: XLM tokenizer.
 tabicl = ["tabicl"]
 tabpfn = ["tabpfn==6.4.1", "tabpfn-extensions==0.2.2"]   # PIN tested versions: tabpfn 6.4.1 fetches weights from the public GCS bucket (storage.googleapis.com/tabpfn-v2-model-files) with NO token. tabpfn>=8 added a Prior Labs license gate (browser_auth.ensure_license_accepted -> TabPFNLicenseError) that demands TABPFN_TOKEN for non-interactive runs; pinning 6.4.1 keeps the token-free behavior.
-tabsketchfm = ["pytorch-lightning", "chardet"]   # data_prep.py sniffs CSV encodings via chardet
+tabsketchfm = ["pytorch-lightning", "chardet", "datasketch"]   # data_prep.py: chardet sniffs CSV encodings, datasketch builds MinHash column sketches
 tuta = []
 tabbie = []
 starmie = ["mlflow"]   # run_pretrain.py imports mlflow for experiment tracking
@@ -83,11 +83,13 @@ all = [
 ]
 dev = [
     "pytest>=7", "pytest-cov",
-    # Lightweight task deps that test modules import transitively; without these
-    # bare `pytest tests/` would fail at collection on a fresh `[bert,dev]` install.
+    # Lightweight deps that test modules import transitively; without these
+    # `pytest tests/` would fail on a fresh `[bert,dev]` install (the release-verify gate env).
     "hnswlib",      # tasks.join_search.splits + tasks.union_search.*
     "munkres",      # tasks.union_search.*
     "tensorboardX", # tasks.semantic_parsing.run_training
+    "chardet",      # tabsketchfm data_prep.py (test_tabsketchfm_data_prep, test_repair_tabsketchfm_degenerate)
+    "datasketch",   # tabsketchfm data_prep.py MinHash sketches (same tests)
 ]
 
 [project.scripts]
