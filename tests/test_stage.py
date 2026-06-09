@@ -1371,6 +1371,25 @@ def test_task_datasets_config_path_matches_stager_output(
     fake_datasets.load_dataset = fake_load
     monkeypatch.setitem(sys.modules, "datasets", fake_datasets)
 
+    # join_search's opendata stager also fetches the canonical query-disjoint
+    # split from HF directly via snapshot_download (not through the faked
+    # `datasets` module), so stub it to keep this hermetic test offline --
+    # mirrors test_stage_ctbench_join_search_opendata_main. Real fetch is @slow.
+    if stage_task == "join_search":
+        def fake_fetch_split(*, repo, variant, dst_dir, revision=None):
+            dst_dir.mkdir(parents=True, exist_ok=True)
+            (dst_dir / "train_queries.csv").write_text(
+                "query_table,query_column\nqt1.csv,id\n")
+            (dst_dir / "test_queries.csv").write_text(
+                "query_table,query_column\nqt1.csv,id\n")
+            (dst_dir / "test_gt.csv").write_text(
+                "query_table,candidate_table,query_column,candidate_column\n"
+                "qt1.csv,ct1.csv,id,ref_id\n")
+            (dst_dir / "split_info.json").write_text("{}")
+        monkeypatch.setattr(
+            stage_mod, "_fetch_join_search_split", fake_fetch_split, raising=False,
+        )
+
     repo_root = Path(__file__).resolve().parent.parent
     data_root = tmp_path / "data"
     stage_mod.stage_dataset(
