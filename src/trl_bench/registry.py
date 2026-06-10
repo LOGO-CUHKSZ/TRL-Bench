@@ -896,7 +896,7 @@ _MODEL_EXTRACTORS: dict[str, ExtractorConfig] = {
     #
     # tabert (CC BY-NC 4.0): BERT-shape CLI (--input / --output / --device)
     #   + --checkpoint <model.bin>. The release mirrors tabert_base_k3 on
-    #   logo-lab/trl-arena-ckpts under the upstream NC-only terms; users on
+    #   logo-lab/trl-bench-ckpts under the upstream NC-only terms; users on
     #   commercial deployments must fetch from the upstream Google Drive
     #   instead (see docs/CHECKPOINT_LICENSES.md). The wrapper additionally
     #   needs its own venv ('source models/tabert/load_env' in the working
@@ -924,7 +924,7 @@ _MODEL_EXTRACTORS: dict[str, ExtractorConfig] = {
     #   not --output_path) + --checkpoint <dir> (a directory containing
     #   pytorch_model.bin + config.json). The wrapper requires
     #   ``--mode table_directory`` as an extra arg. Mirrored on
-    #   logo-lab/trl-arena-ckpts (Apache-2.0) under
+    #   logo-lab/trl-bench-ckpts (Apache-2.0) under
     #   ``turl/pretrained/{pytorch_model.bin,config.json}``.
     "turl": ExtractorConfig(
         runner="trl_bench.models.turl.generate_column_embeddings_dataset",
@@ -976,7 +976,7 @@ _MODEL_EXTRACTORS: dict[str, ExtractorConfig] = {
     # tabbie (MIT — see docs/CHECKPOINT_LICENSES.md):
     #   BERT-shape --input / --output but --model_path <weights.pt> and
     #   --device_id <int>. Same device-id translation as TUTA. Not mirrored
-    #   on logo-lab/trl-arena-ckpts; users
+    #   on logo-lab/trl-bench-ckpts; users
     #   fetch from the SFIG611 Google Drive folder (see
     #   docs/CHECKPOINT_LICENSES.md).
     "tabbie": ExtractorConfig(

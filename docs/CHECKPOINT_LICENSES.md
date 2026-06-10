@@ -4,7 +4,7 @@ This document records the upstream license, attribution requirements, and re-hos
 permission for each of the six upstream-pretrained models used in TRL-Bench.
 
 The "Decision" field reflects the conservative default for a *public, potentially
-commercial* mirror at `logo-lab/trl-arena-ckpts/<model>/`. If TRL-Bench is
+commercial* mirror at `logo-lab/trl-bench-ckpts/<model>/`. If TRL-Bench is
 released strictly as a non-commercial academic artefact, the decisions for
 TaBERT / TabSketchFM may be revisited. Checkpoints without clear redistribution
 terms are documented upstream-only and are not mirrored.
@@ -44,10 +44,10 @@ local checkpoint are marked `TBD; compute after download`.
   - TUTA-base: https://drive.google.com/file/d/1j5qzw3c2UwbVO7TTHKRQmTvRki8vDO0l/view?usp=sharing
 - **SHA256:**
   - `checkpoints/tuta/tuta.bin`: `51d05030ff23f257c4eedc6db350e1c7b733f61226c822bf63459d4f3c6b4db8`
-- **Decision:** Mirror to `logo-lab/trl-arena-ckpts/tuta/` with a copy of the
+- **Decision:** Mirror to `logo-lab/trl-bench-ckpts/tuta/` with a copy of the
   upstream MIT LICENSE and a NOTICE referencing the citation above.
 - **Status:** Live as of 2026-05-18 at
-  https://huggingface.co/logo-lab/trl-arena-ckpts (path: `tuta/tuta.bin`).
+  https://huggingface.co/logo-lab/trl-bench-ckpts (path: `tuta/tuta.bin`).
   Per-model `LICENSE` and `NOTICE` files were uploaded alongside the binary.
 
 ---
@@ -78,7 +78,7 @@ local checkpoint are marked `TBD; compute after download`.
   - `checkpoints/tabert/tabert_large_k1/model.bin`: `d369f6331107a7a38ddb1323aebea4f7eb1354c97b977487cc41db78e13913eb`
   - `checkpoints/tabert/tabert_large_k3/model.bin`: `6df07e347e16ba1198104804d9be851b1e497ff4c1ba94ecb9a8ac4a3ff3119d`
 - **Decision (2026-05-20 — revised from earlier "upstream-only" stance):**
-  Mirror to `logo-lab/trl-arena-ckpts/tabert/tabert_base_k3/model.bin` under
+  Mirror to `logo-lab/trl-bench-ckpts/tabert/tabert_base_k3/model.bin` under
   the upstream CC BY-NC 4.0 license. TRL-Bench is released as a
   non-commercial academic artefact (see top-level LICENSE); the mirror
   inherits the same non-commercial restriction. The LICENSE and NOTICE
@@ -87,7 +87,7 @@ local checkpoint are marked `TBD; compute after download`.
   downstream users MUST NOT use this checkpoint — train your own model or
   obtain an alternate license from Meta Platforms.
 - **Status:** Live as of 2026-05-20 at
-  https://huggingface.co/logo-lab/trl-arena-ckpts (paths:
+  https://huggingface.co/logo-lab/trl-bench-ckpts (paths:
   `tabert/tabert_base_k3/{model.bin,tb_config.json,version.txt}` plus
   `tabert/{LICENSE,NOTICE}`).
 
@@ -109,10 +109,10 @@ local checkpoint are marked `TBD; compute after download`.
   https://buckeyemailosu-my.sharepoint.com/:f:/g/personal/deng_595_buckeyemail_osu_edu/EjZWRtslWX9CubQ92jlmNTgB74hxxXszy9BUaXG5OL5F-g
 - **SHA256:**
   - `checkpoints/turl/pretrained/pytorch_model.bin`: `edfe013b68083e91d66e15bef40de7a52f2851b5d803fffcd9c6d96a475dc37e`
-- **Decision:** Mirror to `logo-lab/trl-arena-ckpts/turl/` with a copy of the
+- **Decision:** Mirror to `logo-lab/trl-bench-ckpts/turl/` with a copy of the
   upstream Apache-2.0 LICENSE and a NOTICE that references the upstream paper.
 - **Status:** Live as of 2026-05-18 at
-  https://huggingface.co/logo-lab/trl-arena-ckpts (path:
+  https://huggingface.co/logo-lab/trl-bench-ckpts (path:
   `turl/pretrained/pytorch_model.bin`). Per-model `LICENSE` and `NOTICE` files
   were uploaded alongside the binary.
 
@@ -144,7 +144,7 @@ local checkpoint are marked `TBD; compute after download`.
   - `checkpoints/tabsketchfm/epoch=10-step=27786.ckpt`: `26f2107d7640bf9485026ff643ff83e569e412572aa68d540d88494f7f9f211d`
   - `checkpoints/tabsketchfm/epoch=15-step=12112.ckpt`: `90d38c0d8f22d171b759758a782314460f1dec8fc5cfc44e1cfa32e943500525`
 - **Decision:** Document upstream URL only.  Do not mirror to
-  `logo-lab/trl-arena-ckpts/`.  Users must obtain the checkpoint directly from
+  `logo-lab/trl-bench-ckpts/`.  Users must obtain the checkpoint directly from
   IBM under the upstream license.
 
 ---
@@ -202,7 +202,7 @@ local checkpoint are marked `TBD; compute after download`.
   `mix.tar.gz` and compute on first use.)
 - **Decision:** Document upstream URL only **until** canonicity of
   `SFIG611/tabbie` is confirmed.  If confirmed canonical (e.g., by paper-author
-  acknowledgement), mirror to `logo-lab/trl-arena-ckpts/tabbie/` with the
+  acknowledgement), mirror to `logo-lab/trl-bench-ckpts/tabbie/` with the
   upstream MIT LICENSE and a NOTICE citing the NAACL 2021 paper.
 
 ---
@@ -215,7 +215,7 @@ local checkpoint are marked `TBD; compute after download`.
    and are not redistributed here.
 3. **TabSketchFM mirror policy** — has CC BY-NC-ND 4.0 (no-derivatives);
    stays upstream-only. TaBERT (CC BY-NC 4.0, was previously also
-   upstream-only) is now mirrored on logo-lab/trl-arena-ckpts under the
+   upstream-only) is now mirrored on logo-lab/trl-bench-ckpts under the
    non-commercial inheritance described in its section above.
 
 ## Per-wrapper "where to place it" (for `--checkpoint-root <root>`)
@@ -228,9 +228,9 @@ the expected on-disk layout is:
 
 | Wrapper      | Expected path under `<checkpoint-root>/`                                  | Source                                                                                             |
 |--------------|---------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------|
-| TaBERT       | `tabert/tabert_base_k3/model.bin`                                         | HF: `logo-lab/trl-arena-ckpts` (NC mirror) OR upstream Google Drive                                |
-| TURL         | `turl/pretrained/{pytorch_model.bin,config.json}`                         | HF: `logo-lab/trl-arena-ckpts` (auto-fetched)                                                      |
-| TUTA         | `tuta/tuta.bin`                                                           | HF: `logo-lab/trl-arena-ckpts` (auto-fetched)                                                      |
+| TaBERT       | `tabert/tabert_base_k3/model.bin`                                         | HF: `logo-lab/trl-bench-ckpts` (NC mirror) OR upstream Google Drive                                |
+| TURL         | `turl/pretrained/{pytorch_model.bin,config.json}`                         | HF: `logo-lab/trl-bench-ckpts` (auto-fetched)                                                      |
+| TUTA         | `tuta/tuta.bin`                                                           | HF: `logo-lab/trl-bench-ckpts` (auto-fetched)                                                      |
 | TabSketchFM  | `tabsketchfm/epoch=10-step=27786.ckpt`                                    | MANUAL: https://doi.org/10.5281/zenodo.8014642                                                     |
 | TABBIE       | `tabbie/weights.pt`                                                       | MANUAL: SFIG611/tabbie Google Drive                                                                |
 | Starmie      | `starmie/<dataset>/model_drop_col,sample_row_head_column_0.pt`            | RETRAIN: `python -m trl_bench.models.starmie.run_pretrain --data_path <dataset>` per-dataset       |

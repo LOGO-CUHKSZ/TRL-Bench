@@ -6,7 +6,7 @@
 # TUTA (MIT, mirror-permitted)
 51d05030ff23f257c4eedc6db350e1c7b733f61226c822bf63459d4f3c6b4db8  tuta/tuta.bin
 #
-# TaBERT (CC BY-NC 4.0, mirrored on logo-lab/trl-arena-ckpts under upstream
+# TaBERT (CC BY-NC 4.0, mirrored on logo-lab/trl-bench-ckpts under upstream
 # non-commercial inheritance — see docs/CHECKPOINT_LICENSES.md).
 # tabert_base_k3 is the dispatcher's expected variant.
 c4f5ea5e8512d6f4c898966fac5c291248f45eb2301f182ad39481fb44e128ea  tabert/tabert_base_k1/model.bin

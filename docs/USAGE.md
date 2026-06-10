@@ -96,12 +96,12 @@ bash scripts/download_checkpoints.sh
 
 This:
 - Pre-pulls HF-native models into `~/.cache/huggingface/` (avoids a thundering herd when parallel jobs all fetch BERT at once).
-- Pulls licensed upstream weights from `logo-lab/trl-arena-ckpts`.
+- Pulls licensed upstream weights from `logo-lab/trl-bench-ckpts`.
 - Downloads upstream-only weights from documented URLs (`curl` / `wget`).
 - Verifies all binaries against `scripts/checksums.sha256`.
 
 Per the license audit (`docs/CHECKPOINT_LICENSES.md`):
-- TUTA (MIT) and TURL (Apache-2.0) are mirrored on `logo-lab/trl-arena-ckpts`.
+- TUTA (MIT) and TURL (Apache-2.0) are mirrored on `logo-lab/trl-bench-ckpts`.
 - TaBERT (CC BY-NC) and TabSketchFM (CC BY-NC-ND) ship via upstream URLs only.
 - Starmie ships no upstream checkpoint — users retrain per-dataset via `src/trl_bench/models/starmie/run_pretrain.py`.
 - TABBIE weights are obtained from the upstream source.

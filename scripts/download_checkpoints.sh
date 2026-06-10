@@ -5,7 +5,7 @@
 # Three paths:
 #   1) HF-native models: pre-pull into ~/.cache/huggingface/ to avoid
 #      thundering-herd across parallel slurm jobs.
-#   2) logo-lab mirror: pull from logo-lab/trl-arena-ckpts where license allows.
+#   2) logo-lab mirror: pull from logo-lab/trl-bench-ckpts where license allows.
 #   3) Upstream-only: curl/wget from upstream URLs where license forbids re-host.
 #
 # Usage: bash scripts/download_checkpoints.sh [model_name ...]
@@ -58,7 +58,7 @@ LOGO_LAB_MIRROR=(
 for m in "${LOGO_LAB_MIRROR[@]}"; do
     echo "[logo-lab] pulling $m ..."
     python -c "from huggingface_hub import snapshot_download; \
-               snapshot_download('logo-lab/trl-arena-ckpts', allow_patterns='${m}/*', \
+               snapshot_download('logo-lab/trl-bench-ckpts', allow_patterns='${m}/*', \
                                   local_dir='$CKPT_ROOT')"
 done
 
