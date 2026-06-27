@@ -67,3 +67,25 @@ checkpoints_*/
 canonical_ref/
 data_freshtest/
 *_results.txt
+
+# Root-level SLURM job-array logs from grid runs
+/slurm-*.out
+
+# Diagnostic / repair output dirs (diag_wdc, diag_rl, diag_tabert_repair, ...)
+/diag_*/
+
+# Local model run-output dirs at repo root. Anchored to root so they never
+# shadow the tracked model source under src/trl_bench/models/transtab/.
+/transtab/
+/transtab_var/
+
+# Seed/family-suffixed checkpoint dirs not caught by *_ckpt/ above
+# (e.g. tabtfvar_ckpt_42/, tabtffix512_ckpt_1/).
+*_ckpt_*/
+
+# One-off local scratch outputs
+/valentine_wired_test/
+/wtq_tablelist.txt
+
+# Claude Code local tooling / session config
+.claude/
