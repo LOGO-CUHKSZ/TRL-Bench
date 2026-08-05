@@ -22,7 +22,7 @@ local checkpoint are marked `TBD; compute after download`.
 | TUTA         | MIT                | YES, attribution required     | Mirror                                      |
 | TaBERT       | CC BY-NC 4.0       | NON-COMMERCIAL ONLY           | Mirror under NC tag (TRL-Bench is academic) |
 | TURL         | Apache-2.0         | YES, attribution required     | Mirror                                      |
-| TabSketchFM  | CC BY-NC-ND 4.0    | NO (no derivatives)           | Document upstream URL only                  |
+| TabSketchFM  | CC BY-NC-ND 4.0 (code) | WEIGHTS ARE OURS          | Mirror our own trained weights (no upstream ckpt exists) |
 | Starmie      | No LICENSE file    | No (upstream-only)            | Document upstream URL only (user retrains)  |
 | TABBIE       | MIT (SFIG611 fork) | YES, attribution required     | Document upstream URL only                  |
 
@@ -121,31 +121,46 @@ local checkpoint are marked `TBD; compute after download`.
 ### TabSketchFM
 
 - **Upstream repo:** https://github.com/IBM/tabsketchfm
-- **License:** Creative Commons Attribution-NonCommercial-NoDerivatives 4.0
-  International (CC BY-NC-ND 4.0).  GitHub returns NOASSERTION/Other for the
+- **License (code):** Creative Commons Attribution-NonCommercial-NoDerivatives
+  4.0 International (CC BY-NC-ND 4.0).  GitHub returns NOASSERTION/Other for the
   SPDX classifier; the upstream README explicitly states "This code is released
-  with CC BY-NC-ND 4.0 License" plus an additional restrictive-use clause from
-  IBM.
-- **Re-host permitted:** NO.  The ND clause forbids sharing of adapted material;
-  a fine-tuned or repacked checkpoint can plausibly be considered an adaptation.
-  Commercial use is also prohibited.  The additional IBM clause ("only for the
-  purpose of comparing this code to other code for scientific experimental
-  purposes, where that distribution is not for a fee") further restricts use.
+  with CC BY-NC-ND 4.0 License" plus an additional IBM clause granting the right
+  to "copy, modify and distribute this code only for the purpose of comparing
+  this code to other code for scientific experimental purposes, where that
+  distribution is not for a fee".
+- **Upstream checkpoint:** NONE.  The TabSketchFM authors did not release
+  pretrained weights or a pretraining corpus.  Earlier revisions of this document
+  attributed the checkpoint below to IBM and directed users to the LakeBench
+  Zenodo record; that attribution was incorrect, and following it made the
+  paper's TabSketchFM results impossible to reproduce.
+- **Checkpoint provenance:** Both checkpoints recorded here were trained from
+  scratch by the TRL-Bench authors using the upstream `pretrain.py`, initialized
+  from `bert-base-uncased` (Apache-2.0), over tables fetched from the source URLs
+  that upstream publishes in `pretraining_tables.txt` (127,934 open-data URLs,
+  primarily government open-data portals).  The corpus was not retained.
+  Confirmed from checkpoint metadata: the file records `pytorch-lightning 2.5.6`,
+  a release postdating the upstream paper (arXiv 2407.01619, July 2024), so it
+  cannot be an upstream artefact.
+- **Re-host permitted:** YES, for the weights.  They are our own training output
+  rather than a copy of any IBM-distributed artefact, so the ND clause — which
+  governs redistribution of *code* — is not engaged by publishing them.  Hosting
+  is also required for reproducibility, since no upstream checkpoint exists.
+  Source code is NOT redistributed: the mirror carries weights only, and users
+  obtain the code from the upstream repository under the upstream license.
 - **Attribution text:**
-  - Retain creator attribution to IBM and full CC BY-NC-ND 4.0 notice; do not
-    modify or repack the checkpoint.
+  - Retain attribution to IBM for the architecture, training code, and method,
+    and the full CC BY-NC-ND 4.0 notice covering the code.
+  - State explicitly that the weights are not an official IBM release.
   - Cite: Khatiwada, A. et al. "TabSketchFM: Sketch-based Tabular Representation
     Learning for Data Discovery over Data Lakes." IEEE ICDE 2025.  arXiv:2407.01619.
-- **Checkpoint URL (upstream):** Pretrained `.ckpt` is referenced from the
-  upstream README; downloads are linked from
-  https://github.com/IBM/tabsketchfm and the
-  TabSketchFM Zenodo record (LakeBench): https://doi.org/10.5281/zenodo.8014642
 - **SHA256:**
   - `checkpoints/tabsketchfm/epoch=10-step=27786.ckpt`: `26f2107d7640bf9485026ff643ff83e569e412572aa68d540d88494f7f9f211d`
   - `checkpoints/tabsketchfm/epoch=15-step=12112.ckpt`: `90d38c0d8f22d171b759758a782314460f1dec8fc5cfc44e1cfa32e943500525`
-- **Decision:** Document upstream URL only.  Do not mirror to
-  `logo-lab/trl-bench-ckpts/`.  Users must obtain the checkpoint directly from
-  IBM under the upstream license.
+- **Decision:** Mirror `epoch=10-step=27786.ckpt` — the checkpoint behind the
+  paper's TabSketchFM results — to `logo-lab/trl-bench-ckpts/tabsketchfm/`,
+  with per-model `LICENSE` and `NOTICE` recording the provenance above (uploaded
+  2026-08-04; remote SHA256 verified against local).  `epoch=15-step=12112.ckpt`
+  is also ours but is not currently mirrored.
 
 ---
 
@@ -213,10 +228,12 @@ local checkpoint are marked `TBD; compute after download`.
    TRL-Bench uses a user-trained Starmie flow (`run_pretrain.py`, per-dataset).
 2. **TABBIE** — weights are obtained from the upstream `SFIG611/tabbie` source
    and are not redistributed here.
-3. **TabSketchFM mirror policy** — has CC BY-NC-ND 4.0 (no-derivatives);
-   stays upstream-only. TaBERT (CC BY-NC 4.0, was previously also
-   upstream-only) is now mirrored on logo-lab/trl-bench-ckpts under the
-   non-commercial inheritance described in its section above.
+3. **TabSketchFM is no longer in this category.** Upstream released no
+   checkpoint at all, and the weights TRL-Bench uses were trained by us; they
+   are now mirrored on logo-lab/trl-bench-ckpts (weights only — no upstream
+   code is redistributed). See its section above. TaBERT (CC BY-NC 4.0, was
+   previously also upstream-only) is likewise mirrored under the
+   non-commercial inheritance described in its section.
 
 ## Per-wrapper "where to place it" (for `--checkpoint-root <root>`)
 
@@ -231,6 +248,6 @@ the expected on-disk layout is:
 | TaBERT       | `tabert/tabert_base_k3/model.bin`                                         | HF: `logo-lab/trl-bench-ckpts` (NC mirror) OR upstream Google Drive                                |
 | TURL         | `turl/pretrained/{pytorch_model.bin,config.json}`                         | HF: `logo-lab/trl-bench-ckpts` (auto-fetched)                                                      |
 | TUTA         | `tuta/tuta.bin`                                                           | HF: `logo-lab/trl-bench-ckpts` (auto-fetched)                                                      |
-| TabSketchFM  | `tabsketchfm/epoch=10-step=27786.ckpt`                                    | MANUAL: https://doi.org/10.5281/zenodo.8014642                                                     |
+| TabSketchFM  | `tabsketchfm/epoch=10-step=27786.ckpt`                                    | HF: `logo-lab/trl-bench-ckpts` (TRL-Bench-trained weights; no upstream ckpt exists)                |
 | TABBIE       | `tabbie/weights.pt`                                                       | MANUAL: SFIG611/tabbie Google Drive                                                                |
 | Starmie      | `starmie/<dataset>/model_drop_col,sample_row_head_column_0.pt`            | RETRAIN: `python -m trl_bench.models.starmie.run_pretrain --data_path <dataset>` per-dataset       |
