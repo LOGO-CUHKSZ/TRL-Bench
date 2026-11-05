@@ -101,8 +101,8 @@ This:
 - Verifies all binaries against `scripts/checksums.sha256`.
 
 Per the license audit (`docs/CHECKPOINT_LICENSES.md`):
-- TUTA (MIT) and TURL (Apache-2.0) are mirrored on `logo-lab/trl-bench-ckpts`.
-- TaBERT (CC BY-NC) and TabSketchFM (CC BY-NC-ND) ship via upstream URLs only.
+- TUTA (MIT), TURL (Apache-2.0) and TaBERT (CC BY-NC) are mirrored on `logo-lab/trl-bench-ckpts`.
+- TabSketchFM has no upstream checkpoint; the weights the paper uses were trained by the TRL-Bench authors and are mirrored on `logo-lab/trl-bench-ckpts`.
 - Starmie ships no upstream checkpoint — users retrain per-dataset via `src/trl_bench/models/starmie/run_pretrain.py`.
 - TABBIE weights are obtained from the upstream source.
 

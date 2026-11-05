@@ -17,7 +17,7 @@ d369f6331107a7a38ddb1323aebea4f7eb1354c97b977487cc41db78e13913eb  tabert/tabert_
 # TURL (Apache-2.0, mirror-permitted)
 edfe013b68083e91d66e15bef40de7a52f2851b5d803fffcd9c6d96a475dc37e  turl/pretrained/pytorch_model.bin
 #
-# TabSketchFM (CC BY-NC-ND 4.0, upstream-only)
+# TabSketchFM (weights trained by the TRL-Bench authors; mirrored on logo-lab/trl-bench-ckpts)
 26f2107d7640bf9485026ff643ff83e569e412572aa68d540d88494f7f9f211d  tabsketchfm/epoch=10-step=27786.ckpt
 90d38c0d8f22d171b759758a782314460f1dec8fc5cfc44e1cfa32e943500525  tabsketchfm/epoch=15-step=12112.ckpt
 #

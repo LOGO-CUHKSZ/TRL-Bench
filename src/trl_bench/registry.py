@@ -909,11 +909,11 @@ _MODEL_EXTRACTORS: dict[str, ExtractorConfig] = {
         checkpoint_arg="--checkpoint",
         checkpoint_required=True,
     ),
-    # tabsketchfm (CC BY-NC-ND 4.0): BERT-shape CLI + --checkpoint <.ckpt>.
-    #   No --max_rows / --batch_size on this wrapper. Cannot be mirrored
-    #   (ND clause); users fetch from the IBM/LakeBench Zenodo record
-    #   (https://doi.org/10.5281/zenodo.8014642). Default path mirrors the
-    #   working repo's ``checkpoints/tabsketchfm/epoch=10-step=27786.ckpt``.
+    # tabsketchfm: BERT-shape CLI + --checkpoint <.ckpt>.
+    #   No --max_rows / --batch_size on this wrapper. Upstream released no
+    #   checkpoint; the weights were trained by the TRL-Bench authors and are
+    #   mirrored on logo-lab/trl-bench-ckpts at
+    #   ``tabsketchfm/epoch=10-step=27786.ckpt`` (scripts/download_checkpoints.sh).
     "tabsketchfm": ExtractorConfig(
         runner="trl_bench.models.tabsketchfm.generate_column_embeddings",
         checkpoint_template="tabsketchfm/epoch=10-step=27786.ckpt",

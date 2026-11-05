@@ -50,10 +50,13 @@ python -c "from sentence_transformers import SentenceTransformer; \
 #           do NOT use this checkpoint in a commercial deployment; train your
 #           own model or fetch from the upstream Google Drive instead, see
 #           docs/CHECKPOINT_LICENSES.md for the URL.)
+#   TabSketchFM: no upstream checkpoint exists; these weights were trained by
+#           the TRL-Bench authors (see docs/CHECKPOINT_LICENSES.md).
 LOGO_LAB_MIRROR=(
     "tuta"
     "turl"
     "tabert"
+    "tabsketchfm"
 )
 for m in "${LOGO_LAB_MIRROR[@]}"; do
     echo "[logo-lab] pulling $m ..."
@@ -64,7 +67,6 @@ done
 
 # == 3) Upstream-only (not redistributed here; obtain from the upstream source) ====
 # Per docs/CHECKPOINT_LICENSES.md:
-#   TabSketchFM: CC BY-NC-ND 4.0 — non-commercial + no-derivatives; upstream only.
 #   Starmie: no checkpoint distributed upstream; users train via
 #            `python -m trl_bench.models.starmie.run_pretrain --data_path
 #            <dataset> --checkpoint_dir $CKPT_ROOT/starmie/<dataset>`.
@@ -81,12 +83,6 @@ done
 
 declare -A UPSTREAM_URL
 declare -A UPSTREAM_LOCAL
-
-# TabSketchFM: IBM, https://github.com/IBM/tabsketchfm — upstream README links
-# to the LakeBench Zenodo record for downloads; no single stable direct URL was
-# recorded in the audit, so this remains a documented manual step.
-UPSTREAM_URL[tabsketchfm]="https://doi.org/10.5281/zenodo.8014642  # see docs/CHECKPOINT_LICENSES.md"
-UPSTREAM_LOCAL[tabsketchfm]="tabsketchfm/epoch=10-step=27786.ckpt"
 
 # Starmie: no upstream checkpoint — retrain. Print instructions instead of downloading.
 # TABBIE: obtained from upstream source — print instructions.
