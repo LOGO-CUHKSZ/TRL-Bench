@@ -2,7 +2,7 @@
 
 Official code release for **TRL-Bench: Standardizing Cross-Paradigm Representation-Level Evaluation of Tabular Encoders**.
 
-**Paper:** [arXiv:2606.09323](https://arxiv.org/abs/2606.09323)
+**Paper:** NeurIPS 2026, Track on Evaluations and Datasets · [arXiv:2606.09323](https://arxiv.org/abs/2606.09323)
 
 TRL-Bench standardizes cross-paradigm representation-level evaluation of tabular encoders. Each encoder exports row-, column-, or table-embeddings through its supported wrapper, and shared lightweight heads probe them across **16 tasks** grouped into three suites: **TRL-CTbench** (column / table), **TRL-Rbench** (row), and **TRL-DLTE** (compositional Data-Lake Table Enrichment).
 
@@ -23,10 +23,10 @@ The [per-suite walkthroughs](#per-suite-walkthroughs) below show how to run each
 > **Citation**
 >
 > ```bibtex
-> @article{pang2026trl,
+> @inproceedings{pang2026trl,
 >   title={TRL-Bench: Standardizing Cross-Paradigm Representation-Level Evaluation of Tabular Encoders},
 >   author={Pang, Wei and Jian, Xiangru and Li, Hehan and Yu, Zhixuan and Xue, Alex and Li, Jinyang and Dong, Zhengyuan and Zhao, Xinjian and Xu, Hao and Zhang, Chao and Cheng, Reynold and {\"O}zsu, M. Tamer and Yu, Tianshu},
->   journal={arXiv preprint arXiv:2606.09323},
+>   booktitle={40th Conference on Neural Information Processing Systems (NeurIPS 2026), Track on Evaluations and Datasets},
 >   year={2026}
 > }
 > ```

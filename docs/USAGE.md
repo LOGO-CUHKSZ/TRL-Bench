@@ -1,6 +1,6 @@
 # Running TRL-Bench
 
-This document describes how to install TRL-Bench, fetch the data + model checkpoints, and run the benchmark across the **21 benchmark models** (plus 2 query encoders and the OpenAI API ablation — 24 wrappers total) and all tasks.
+This document describes how to install TRL-Bench, fetch the data + model checkpoints, and run the benchmark across the paper's **20 benchmark models** (24 wrappers in total: the 20 plus the MPNet and Sentence-T5 query encoders, the OpenAI embedding ablation, and SwitchTab, which is outside the paper's pool) and all tasks.
 
 ## Pipeline stages
 
@@ -46,28 +46,7 @@ Result lands at `results/evaluation/join_classification/bert/cls_embedding/linea
 
 ## Per-cell flag notes
 
-`trl-bench-run` accepts `--probe linear` (or `linear|mlp|cosine_threshold|dummy`) for supervised PROBE_TASKS, and the family-builders in `src/trl_bench/registry.py` apply task-level defaults for hyperparameters like K, threshold, ef, N for retrieval tasks. For most cells `--probe linear` plus those defaults is correct. The cells below need a non-default flag:
-
-| Model | Task | Setting / dataset | Required non-defaults |
-|---|---|---|---|
-| TabICL | `row_prediction` | any openml_* | `--probe mlp` |
-| TabPFN | `row_prediction` | any openml_* | `--probe mlp` |
-| TabSketchFM | `join_classification`, `union_classification`, `join_containment` (`strict` subdir) | spider_join / wiki_union / etc. | `--probe mlp` |
-| Starmie | `union_classification`, `union_regression` | wiki_union / ecb_union | `--probe mlp` |
-| Starmie | `union_search` | tus / santos / ugen_v1 / tus_hard | runner overrides: `--method hnsw --K 60 --threshold 0.1 --ef 100 --N 500` |
-
-- **TabICL / TabPFN / TabSketchFM / Starmie pair tasks** use the MLP head; pass `--probe mlp`.
-- **Starmie union_search.** The `union_search` ProbeConfig defaults in `src/trl_bench/registry.py::_build_union_search_cmd` are tuned for the dense baselines (BERT/GTE/openai): `--method linear --K 10 --threshold 0.7 --ef 100 --N 100`. Starmie's tus / tus_hard cells need an HNSW operating point — `trl-bench-run` has no CLI knob to override these per-cell, so invoke the runner directly:
-
-  ```bash
-  python -m trl_bench.tasks.union_search.run_search \
-      --query_embeddings    ./embeddings/column/starmie/<dataset>.pkl \
-      --datalake_embeddings ./embeddings/column/starmie/<dataset>.pkl \
-      --groundtruth         ./data/union_search/<dataset>/groundtruth.pickle \
-      --method hnsw --K 60 --threshold 0.1 --ef 100 --N 500
-  ```
-
-  The runner prints MAP@K / P@K / R@K to stdout.
+`trl-bench-run` accepts `--probe linear` or `--probe mlp` (also `cosine_threshold` and `dummy`) for supervised probe tasks, and the family builders in `src/trl_bench/registry.py` apply each task's defaults, including the per-dataset search settings (Union Search on `tus` / `tus_hard` uses HNSW with K = 60), so no cell needs extra flags. The paper reads every encoder out with both the linear and the MLP head: run each probe cell with both.
 
 ## Extending to other (model, task, dataset) cells
 
@@ -97,7 +76,7 @@ bash scripts/download_checkpoints.sh
 This:
 - Pre-pulls HF-native models into `~/.cache/huggingface/` (avoids a thundering herd when parallel jobs all fetch BERT at once).
 - Pulls licensed upstream weights from `logo-lab/trl-bench-ckpts`.
-- Downloads upstream-only weights from documented URLs (`curl` / `wget`).
+- Prints the manual steps for TABBIE (upstream download) and Starmie (trained per dataset).
 - Verifies all binaries against `scripts/checksums.sha256`.
 
 Per the license audit (`docs/CHECKPOINT_LICENSES.md`):
@@ -106,16 +85,11 @@ Per the license audit (`docs/CHECKPOINT_LICENSES.md`):
 - Starmie ships no upstream checkpoint — users retrain per-dataset via `src/trl_bench/models/starmie/run_pretrain.py`.
 - TABBIE weights are obtained from the upstream source.
 
-### 3. Run the grid (optional — cluster)
+### 3. Run the benchmark
 
-```bash
-python slurm/generate_jobs.py --config configs/grid.yaml   # one .sbatch per valid (model,task,dataset,setting,probe,seed) cell
-bash slurm/submit.sh
-```
+Follow the [per-suite walkthroughs in the README](../README.md#per-suite-walkthroughs): for every task they give the `--task`, `--dataset`, `--setting` and `--probe` values the paper uses, and where each result lands.
 
-Result JSONs land at `results/evaluation/<task>/<model>/<setting>/<probe>/<model>_<dataset>_seed<S>.json`.
-
-No cluster is required: `trl-bench-run` runs any single cell standalone on one GPU (tens of minutes), and you can loop it over cells in a shell script. The `slurm/` scripts simply fan the grid across cluster nodes.
+No cluster is required: `trl-bench-run` runs any single cell standalone on one GPU (tens of minutes), and you can loop it over cells in a shell script.
 
 ## Dependency conflicts (known)
 

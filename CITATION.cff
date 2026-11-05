@@ -34,7 +34,7 @@ date-released: "2026-05-19"
 license: Apache-2.0
 url: "https://github.com/LOGO-CUHKSZ/TRL-Bench"
 preferred-citation:
-  type: article
+  type: conference-paper
   title: "TRL-Bench: Standardizing Cross-Paradigm Representation-Level Evaluation of Tabular Encoders"
   authors:
     - family-names: Pang
@@ -64,4 +64,5 @@ preferred-citation:
     - family-names: Yu
       given-names: Tianshu
   year: 2026
-  journal: "arXiv preprint arXiv:2606.09323"
+  collection-title: "40th Conference on Neural Information Processing Systems (NeurIPS 2026), Track on Evaluations and Datasets"
+  url: "https://arxiv.org/abs/2606.09323"

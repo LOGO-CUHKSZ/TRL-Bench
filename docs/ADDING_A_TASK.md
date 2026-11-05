@@ -17,7 +17,7 @@ Use the existing `_TASK_PROBE_CONFIG` entries in `src/trl_bench/registry.py` as 
 
 Edit `_TASK_PROBE_CONFIG` in `src/trl_bench/registry.py`. The simplest template is `join_classification` — `task_name_template="join_{dataset}"`, `task_type="classification"`, `combination_method="concat"`, defaults for everything else.
 
-For tasks whose labels.json key for the task name differs from the dataset slug, use the same template style: `task_name_template="containment_{dataset}"`, `task_name_template="cta_{dataset}"`. The dataset substring in `--task_name` must match the runner's internal task lookup; cross-check against the `.sbatch`.
+For tasks whose labels.json key for the task name differs from the dataset slug, use the same template style: `task_name_template="containment_{dataset}"`, `task_name_template="cta_{dataset}"`. The dataset substring in `--task_name` must match the runner's internal task lookup; cross-check it against the task keys in the staged dataset's `labels.json`.
 
 ## Step 3: Pick a `path_layout`
 
@@ -61,4 +61,4 @@ For end-to-end coverage, run one (model, task, dataset, setting, probe, seed) ce
 - `join_containment` — pair-regression with `without_setting` layout and column-pickle input (`batch_size 2048`, `--embedding_type column`).
 - `record_linkage` — different runner script (`trl_bench.tasks.record_linkage.run_record_linkage`), `with_dataset` layout, no `--task_type` / `--embedding_type`. Documents what a non-`run_task.py` task entry looks like.
 
-If your task has no `.sbatch` reference in the working repo, write its runner first.
+If no existing runner fits your task, write its runner first.
